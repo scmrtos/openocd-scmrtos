@@ -98,3 +98,7 @@ TAGS
 
 # ctags tag files
 tags
+
+*.vtg
+*.vpwhistu
+...

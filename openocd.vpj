@@ -1,0 +1,744 @@
+<!DOCTYPE Project SYSTEM "http://www.slickedit.com/dtd/vse/10.0/vpj.dtd">
+<Project
+    Version="10.0"
+    VendorName="SlickEdit"
+    WorkingDir="."
+    VCSProject="Subversion:">
+    <Config
+        Name="Release"
+        OutputFile=""
+        CompilerConfigName="Latest Version">
+        <Menu>
+            <Target
+                Name="Compile"
+                MenuCaption="&amp;Compile"
+                SaveOption="SaveAll"
+                RunFromDir="%rw/../build"
+                CaptureOutputWith="ProcessBuffer"
+                ClearProcessBuffer="1">
+                <Exec CmdLine="make"/>
+            </Target>
+            <Target
+                Name="Build"
+                MenuCaption="&amp;Build"
+                CaptureOutputWith="ProcessBuffer"
+                SaveOption="SaveAll"
+                ClearProcessBuffer="1"
+                RunFromDir="%rw/../build">
+                <Exec CmdLine="make"/>
+            </Target>
+            <Target
+                Name="Rebuild"
+                MenuCaption="&amp;Rebuild"
+                CaptureOutputWith="ProcessBuffer"
+                SaveOption="SaveWorkspaceFiles"
+                RunFromDir="%rw"
+                ClearProcessBuffer="1">
+                <Exec CmdLine="scons -Q -s -D rebuild"/>
+            </Target>
+            <Target
+                Name="Execute"
+                MenuCaption="E&amp;xecute"
+                SaveOption="SaveAll"
+                RunFromDir="%rw"
+                ClearProcessBuffer="1"
+                CaptureOutputWith="ProcessBuffer">
+                <Exec CmdLine="scons -Q -s -D load"/>
+            </Target>
+        </Menu>
+    </Config>
+    <CustomFolders>
+        <Folder
+            Name="Source Files"
+            Filters="*.c;*.C;*.cc;*.cpp;*.cp;*.cxx;*.prg;*.pas;*.dpr;*.asm;*.s;*.bas;*.java;*.cs;*.sc;*.e;*.cob;*.html;*.rc;*.tcl;*.py;*.pl"></Folder>
+        <Folder
+            Name="Scripts"
+            Filters=""></Folder>
+    </CustomFolders>
+    <Files AutoFolders="DirectoryView">
+        <Folder Name="src">
+            <Folder Name="flash">
+                <Folder Name="nand">
+                    <F N="src/flash/nand/arm_io.c"/>
+                    <F N="src/flash/nand/arm_io.h"/>
+                    <F N="src/flash/nand/at91sam9.c"/>
+                    <F N="src/flash/nand/core.c"/>
+                    <F N="src/flash/nand/core.h"/>
+                    <F N="src/flash/nand/davinci.c"/>
+                    <F N="src/flash/nand/driver.c"/>
+                    <F N="src/flash/nand/driver.h"/>
+                    <F N="src/flash/nand/ecc.c"/>
+                    <F N="src/flash/nand/ecc_kw.c"/>
+                    <F N="src/flash/nand/fileio.c"/>
+                    <F N="src/flash/nand/fileio.h"/>
+                    <F N="src/flash/nand/imp.h"/>
+                    <F N="src/flash/nand/lpc3180.c"/>
+                    <F N="src/flash/nand/lpc3180.h"/>
+                    <F N="src/flash/nand/lpc32xx.c"/>
+                    <F N="src/flash/nand/lpc32xx.h"/>
+                    <F
+                        N="src/flash/nand/Makefile.am"
+                        Type="Makefile"/>
+                    <F
+                        N="src/flash/nand/Makefile.in"
+                        Type="Makefile"/>
+                    <F N="src/flash/nand/mx3.c"/>
+                    <F N="src/flash/nand/mx3.h"/>
+                    <F N="src/flash/nand/mxc.c"/>
+                    <F N="src/flash/nand/mxc.h"/>
+                    <F N="src/flash/nand/nonce.c"/>
+                    <F N="src/flash/nand/nuc910.c"/>
+                    <F N="src/flash/nand/nuc910.h"/>
+                    <F N="src/flash/nand/orion.c"/>
+                    <F N="src/flash/nand/s3c2410.c"/>
+                    <F N="src/flash/nand/s3c2412.c"/>
+                    <F N="src/flash/nand/s3c2440.c"/>
+                    <F N="src/flash/nand/s3c2443.c"/>
+                    <F N="src/flash/nand/s3c24xx.c"/>
+                    <F N="src/flash/nand/s3c24xx.h"/>
+                    <F N="src/flash/nand/s3c24xx_regs.h"/>
+                    <F N="src/flash/nand/s3c6400.c"/>
+                    <F N="src/flash/nand/tcl.c"/>
+                </Folder>
+                <Folder Name="nor">
+                    <F N="src/flash/nor/aduc702x.c"/>
+                    <F N="src/flash/nor/aducm360.c"/>
+                    <F N="src/flash/nor/at91sam3.c"/>
+                    <F N="src/flash/nor/at91sam4.c"/>
+                    <F N="src/flash/nor/at91sam4l.c"/>
+                    <F N="src/flash/nor/at91sam7.c"/>
+                    <F N="src/flash/nor/at91samd.c"/>
+                    <F N="src/flash/nor/atsamv.c"/>
+                    <F N="src/flash/nor/avrf.c"/>
+                    <F N="src/flash/nor/cfi.c"/>
+                    <F N="src/flash/nor/cfi.h"/>
+                    <F N="src/flash/nor/core.c"/>
+                    <F N="src/flash/nor/core.h"/>
+                    <F N="src/flash/nor/driver.h"/>
+                    <F N="src/flash/nor/drivers.c"/>
+                    <F N="src/flash/nor/dsp5680xx_flash.c"/>
+                    <F N="src/flash/nor/efm32.c"/>
+                    <F N="src/flash/nor/em357.c"/>
+                    <F N="src/flash/nor/faux.c"/>
+                    <F N="src/flash/nor/fm3.c"/>
+                    <F N="src/flash/nor/fm4.c"/>
+                    <F N="src/flash/nor/imp.h"/>
+                    <F N="src/flash/nor/jtagspi.c"/>
+                    <F N="src/flash/nor/kinetis.c"/>
+                    <F N="src/flash/nor/lpc2000.c"/>
+                    <F N="src/flash/nor/lpc288x.c"/>
+                    <F N="src/flash/nor/lpc2900.c"/>
+                    <F N="src/flash/nor/lpcspifi.c"/>
+                    <F
+                        N="src/flash/nor/Makefile.am"
+                        Type="Makefile"/>
+                    <F
+                        N="src/flash/nor/Makefile.in"
+                        Type="Makefile"/>
+                    <F N="src/flash/nor/mdr.c"/>
+                    <F N="src/flash/nor/mrvlqspi.c"/>
+                    <F N="src/flash/nor/niietcm4.c"/>
+                    <F N="src/flash/nor/non_cfi.c"/>
+                    <F N="src/flash/nor/non_cfi.h"/>
+                    <F N="src/flash/nor/nrf51.c"/>
+                    <F N="src/flash/nor/numicro.c"/>
+                    <F N="src/flash/nor/ocl.c"/>
+                    <F N="src/flash/nor/ocl.h"/>
+                    <F N="src/flash/nor/pic32mx.c"/>
+                    <F N="src/flash/nor/psoc4.c"/>
+                    <F N="src/flash/nor/sim3x.c"/>
+                    <F N="src/flash/nor/spi.c"/>
+                    <F N="src/flash/nor/spi.h"/>
+                    <F N="src/flash/nor/stellaris.c"/>
+                    <F N="src/flash/nor/stm32f1x.c"/>
+                    <F N="src/flash/nor/stm32f2x.c"/>
+                    <F N="src/flash/nor/stm32l4x.c"/>
+                    <F N="src/flash/nor/stm32lx.c"/>
+                    <F N="src/flash/nor/stmsmi.c"/>
+                    <F N="src/flash/nor/str7x.c"/>
+                    <F N="src/flash/nor/str9x.c"/>
+                    <F N="src/flash/nor/str9xpec.c"/>
+                    <F N="src/flash/nor/tcl.c"/>
+                    <F N="src/flash/nor/tms470.c"/>
+                    <F N="src/flash/nor/virtual.c"/>
+                    <F N="src/flash/nor/xmc4xxx.c"/>
+                </Folder>
+                <F N="src/flash/common.c"/>
+                <F N="src/flash/common.h"/>
+                <F
+                    N="src/flash/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/flash/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/flash/mflash.c"/>
+                <F N="src/flash/mflash.h"/>
+                <F N="src/flash/startup.tcl"/>
+            </Folder>
+            <Folder Name="helper">
+                <F N="src/helper/bin2char.sh"/>
+                <F N="src/helper/binarybuffer.c"/>
+                <F N="src/helper/binarybuffer.h"/>
+                <F N="src/helper/command.c"/>
+                <F N="src/helper/command.h"/>
+                <F N="src/helper/configuration.c"/>
+                <F N="src/helper/configuration.h"/>
+                <F N="src/helper/fileio.c"/>
+                <F N="src/helper/fileio.h"/>
+                <F N="src/helper/ioutil.c"/>
+                <F N="src/helper/ioutil.h"/>
+                <F N="src/helper/ioutil_stubs.c"/>
+                <F N="src/helper/jep106.c"/>
+                <F N="src/helper/jep106.h"/>
+                <F N="src/helper/jep106.inc"/>
+                <F N="src/helper/jim-nvp.c"/>
+                <F N="src/helper/jim-nvp.h"/>
+                <F N="src/helper/list.h"/>
+                <F N="src/helper/log.c"/>
+                <F N="src/helper/log.h"/>
+                <F
+                    N="src/helper/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/helper/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/helper/options.c"/>
+                <F N="src/helper/replacements.c"/>
+                <F N="src/helper/replacements.h"/>
+                <F N="src/helper/startup.tcl"/>
+                <F N="src/helper/system.h"/>
+                <F N="src/helper/time_support.c"/>
+                <F N="src/helper/time_support.h"/>
+                <F N="src/helper/time_support_common.c"/>
+                <F N="src/helper/types.h"/>
+                <F N="src/helper/update_jep106.pl"/>
+                <F N="src/helper/util.c"/>
+                <F N="src/helper/util.h"/>
+            </Folder>
+            <Folder Name="jtag">
+                <Folder Name="aice">
+                    <F N="src/jtag/aice/aice_interface.c"/>
+                    <F N="src/jtag/aice/aice_interface.h"/>
+                    <F N="src/jtag/aice/aice_pipe.c"/>
+                    <F N="src/jtag/aice/aice_pipe.h"/>
+                    <F N="src/jtag/aice/aice_port.c"/>
+                    <F N="src/jtag/aice/aice_port.h"/>
+                    <F N="src/jtag/aice/aice_transport.c"/>
+                    <F N="src/jtag/aice/aice_transport.h"/>
+                    <F N="src/jtag/aice/aice_usb.c"/>
+                    <F N="src/jtag/aice/aice_usb.h"/>
+                    <F
+                        N="src/jtag/aice/Makefile.am"
+                        Type="Makefile"/>
+                    <F
+                        N="src/jtag/aice/Makefile.in"
+                        Type="Makefile"/>
+                </Folder>
+                <Folder Name="drivers">
+                    <Folder Name="libjaylink">
+                        <Folder Name="autom4te.cache">
+                            <F N="src/jtag/drivers/libjaylink/autom4te.cache/output.0"/>
+                            <F N="src/jtag/drivers/libjaylink/autom4te.cache/output.1"/>
+                            <F N="src/jtag/drivers/libjaylink/autom4te.cache/output.2"/>
+                            <F N="src/jtag/drivers/libjaylink/autom4te.cache/traces.0"/>
+                            <F N="src/jtag/drivers/libjaylink/autom4te.cache/traces.1"/>
+                            <F N="src/jtag/drivers/libjaylink/autom4te.cache/traces.2"/>
+                        </Folder>
+                        <Folder Name="build-aux">
+                            <F N="src/jtag/drivers/libjaylink/build-aux/config.guess"/>
+                            <F N="src/jtag/drivers/libjaylink/build-aux/config.sub"/>
+                            <F N="src/jtag/drivers/libjaylink/build-aux/ltmain.sh"/>
+                        </Folder>
+                        <Folder Name="contrib">
+                            <F N="src/jtag/drivers/libjaylink/contrib/99-libjaylink.rules"/>
+                        </Folder>
+                        <Folder Name="libjaylink">
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/buffer.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/core.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/device.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/discovery.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/emucom.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/error.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/fileio.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/jtag.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/libjaylink-internal.h"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/libjaylink.h"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/list.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/log.c"/>
+                            <F
+                                N="src/jtag/drivers/libjaylink/libjaylink/Makefile.am"
+                                Type="Makefile"/>
+                            <F
+                                N="src/jtag/drivers/libjaylink/libjaylink/Makefile.in"
+                                Type="Makefile"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/swd.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/swo.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/target.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/transport.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/util.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/version.c"/>
+                            <F N="src/jtag/drivers/libjaylink/libjaylink/version.h.in"/>
+                        </Folder>
+                        <Folder Name="m4">
+                            <F N="src/jtag/drivers/libjaylink/m4/libtool.m4"/>
+                            <F N="src/jtag/drivers/libjaylink/m4/ltoptions.m4"/>
+                            <F N="src/jtag/drivers/libjaylink/m4/ltsugar.m4"/>
+                            <F N="src/jtag/drivers/libjaylink/m4/ltversion.m4"/>
+                            <F N="src/jtag/drivers/libjaylink/m4/lt~obsolete.m4"/>
+                        </Folder>
+                        <F N="src/jtag/drivers/libjaylink/.git"/>
+                        <F N="src/jtag/drivers/libjaylink/.gitignore"/>
+                        <F N="src/jtag/drivers/libjaylink/aclocal.m4"/>
+                        <F N="src/jtag/drivers/libjaylink/autogen.sh"/>
+                        <F N="src/jtag/drivers/libjaylink/config.h.in"/>
+                        <F N="src/jtag/drivers/libjaylink/configure.ac"/>
+                        <F N="src/jtag/drivers/libjaylink/configure.gnu"/>
+                        <F N="src/jtag/drivers/libjaylink/libjaylink.pc.in"/>
+                        <F
+                            N="src/jtag/drivers/libjaylink/Makefile.am"
+                            Type="Makefile"/>
+                        <F
+                            N="src/jtag/drivers/libjaylink/Makefile.in"
+                            Type="Makefile"/>
+                    </Folder>
+                    <Folder Name="OpenULINK">
+                        <Folder Name="include">
+                            <F N="src/jtag/drivers/OpenULINK/include/common.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/delay.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/io.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/jtag.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/main.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/msgtypes.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/protocol.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/reg_ezusb.h"/>
+                            <F N="src/jtag/drivers/OpenULINK/include/usb.h"/>
+                        </Folder>
+                        <Folder Name="src">
+                            <F N="src/jtag/drivers/OpenULINK/src/delay.c"/>
+                            <F N="src/jtag/drivers/OpenULINK/src/jtag.c"/>
+                            <F N="src/jtag/drivers/OpenULINK/src/main.c"/>
+                            <F N="src/jtag/drivers/OpenULINK/src/protocol.c"/>
+                            <F N="src/jtag/drivers/OpenULINK/src/usb.c"/>
+                            <F N="src/jtag/drivers/OpenULINK/src/USBJmpTb.a51"/>
+                        </Folder>
+                        <F N="src/jtag/drivers/OpenULINK/ulink_firmware.hex"/>
+                    </Folder>
+                    <Folder Name="usb_blaster">
+                        <F
+                            N="src/jtag/drivers/usb_blaster/Makefile.am"
+                            Type="Makefile"/>
+                        <F
+                            N="src/jtag/drivers/usb_blaster/Makefile.in"
+                            Type="Makefile"/>
+                        <F N="src/jtag/drivers/usb_blaster/README.CheapClone"/>
+                        <F N="src/jtag/drivers/usb_blaster/ublast2_access_libusb.c"/>
+                        <F N="src/jtag/drivers/usb_blaster/ublast_access.h"/>
+                        <F N="src/jtag/drivers/usb_blaster/ublast_access_ftd2xx.c"/>
+                        <F N="src/jtag/drivers/usb_blaster/ublast_access_ftdi.c"/>
+                        <F N="src/jtag/drivers/usb_blaster/usb_blaster.c"/>
+                    </Folder>
+                    <Folder Name="versaloon">
+                        <Folder Name="usbtoxxx">
+                            <F N="src/jtag/drivers/versaloon/usbtoxxx/usbtogpio.c"/>
+                            <F N="src/jtag/drivers/versaloon/usbtoxxx/usbtojtagraw.c"/>
+                            <F N="src/jtag/drivers/versaloon/usbtoxxx/usbtopwr.c"/>
+                            <F N="src/jtag/drivers/versaloon/usbtoxxx/usbtoswd.c"/>
+                            <F N="src/jtag/drivers/versaloon/usbtoxxx/usbtoxxx.c"/>
+                            <F N="src/jtag/drivers/versaloon/usbtoxxx/usbtoxxx.h"/>
+                            <F N="src/jtag/drivers/versaloon/usbtoxxx/usbtoxxx_internal.h"/>
+                        </Folder>
+                        <F N="src/jtag/drivers/versaloon/versaloon.c"/>
+                        <F N="src/jtag/drivers/versaloon/versaloon.h"/>
+                        <F N="src/jtag/drivers/versaloon/versaloon_include.h"/>
+                        <F N="src/jtag/drivers/versaloon/versaloon_internal.h"/>
+                    </Folder>
+                    <F N="src/jtag/drivers/amt_jtagaccel.c"/>
+                    <F N="src/jtag/drivers/arm-jtag-ew.c"/>
+                    <F N="src/jtag/drivers/at91rm9200.c"/>
+                    <F N="src/jtag/drivers/bcm2835gpio.c"/>
+                    <F N="src/jtag/drivers/bitbang.c"/>
+                    <F N="src/jtag/drivers/bitbang.h"/>
+                    <F N="src/jtag/drivers/bitq.c"/>
+                    <F N="src/jtag/drivers/bitq.h"/>
+                    <F N="src/jtag/drivers/buspirate.c"/>
+                    <F N="src/jtag/drivers/cmsis_dap_usb.c"/>
+                    <F N="src/jtag/drivers/driver.c"/>
+                    <F N="src/jtag/drivers/dummy.c"/>
+                    <F N="src/jtag/drivers/ep93xx.c"/>
+                    <F N="src/jtag/drivers/ft2232.c"/>
+                    <F N="src/jtag/drivers/ftd2xx_common.h"/>
+                    <F N="src/jtag/drivers/ftdi.c"/>
+                    <F N="src/jtag/drivers/gw16012.c"/>
+                    <F N="src/jtag/drivers/jlink.c"/>
+                    <F N="src/jtag/drivers/jtag_vpi.c"/>
+                    <F N="src/jtag/drivers/libusb0_common.c"/>
+                    <F N="src/jtag/drivers/libusb0_common.h"/>
+                    <F N="src/jtag/drivers/libusb1_common.c"/>
+                    <F N="src/jtag/drivers/libusb1_common.h"/>
+                    <F N="src/jtag/drivers/libusb_common.h"/>
+                    <F
+                        N="src/jtag/drivers/Makefile.am"
+                        Type="Makefile"/>
+                    <F
+                        N="src/jtag/drivers/Makefile.in"
+                        Type="Makefile"/>
+                    <F
+                        N="src/jtag/drivers/Makefile.rlink"
+                        Type="Makefile"/>
+                    <F N="src/jtag/drivers/minidriver_imp.h"/>
+                    <F N="src/jtag/drivers/mpsse.c"/>
+                    <F N="src/jtag/drivers/mpsse.h"/>
+                    <F N="src/jtag/drivers/opendous.c"/>
+                    <F N="src/jtag/drivers/openjtag.c"/>
+                    <F N="src/jtag/drivers/osbdm.c"/>
+                    <F N="src/jtag/drivers/parport.c"/>
+                    <F N="src/jtag/drivers/presto.c"/>
+                    <F N="src/jtag/drivers/remote_bitbang.c"/>
+                    <F N="src/jtag/drivers/rlink.c"/>
+                    <F N="src/jtag/drivers/rlink.h"/>
+                    <F N="src/jtag/drivers/rlink_call.m4"/>
+                    <F N="src/jtag/drivers/rlink_dtc_cmd.h"/>
+                    <F N="src/jtag/drivers/rlink_ep1_cmd.h"/>
+                    <F N="src/jtag/drivers/rlink_init.m4"/>
+                    <F N="src/jtag/drivers/rlink_speed_table.c"/>
+                    <F N="src/jtag/drivers/rlink_st7.h"/>
+                    <F N="src/jtag/drivers/stlink_usb.c"/>
+                    <F N="src/jtag/drivers/sysfsgpio.c"/>
+                    <F N="src/jtag/drivers/ti_icdi_usb.c"/>
+                    <F N="src/jtag/drivers/ulink.c"/>
+                    <F N="src/jtag/drivers/usb_common.c"/>
+                    <F N="src/jtag/drivers/usb_common.h"/>
+                    <F N="src/jtag/drivers/usbprog.c"/>
+                    <F N="src/jtag/drivers/vsllink.c"/>
+                </Folder>
+                <Folder Name="hla">
+                    <F N="src/jtag/hla/hla_interface.c"/>
+                    <F N="src/jtag/hla/hla_interface.h"/>
+                    <F N="src/jtag/hla/hla_layout.c"/>
+                    <F N="src/jtag/hla/hla_layout.h"/>
+                    <F N="src/jtag/hla/hla_tcl.c"/>
+                    <F N="src/jtag/hla/hla_tcl.h"/>
+                    <F N="src/jtag/hla/hla_transport.c"/>
+                    <F N="src/jtag/hla/hla_transport.h"/>
+                    <F
+                        N="src/jtag/hla/Makefile.am"
+                        Type="Makefile"/>
+                    <F
+                        N="src/jtag/hla/Makefile.in"
+                        Type="Makefile"/>
+                </Folder>
+                <Folder Name="minidriver">
+                    <F N="src/jtag/minidriver/minidriver_imp.h"/>
+                </Folder>
+                <Folder Name="minidummy">
+                    <F N="src/jtag/minidummy/jtag_minidriver.h"/>
+                    <F N="src/jtag/minidummy/minidummy.c"/>
+                </Folder>
+                <Folder Name="zy1000">
+                    <F N="src/jtag/zy1000/jtag_minidriver.h"/>
+                    <F N="src/jtag/zy1000/zy1000.c"/>
+                </Folder>
+                <F N="src/jtag/adapter.c"/>
+                <F N="src/jtag/commands.c"/>
+                <F N="src/jtag/commands.h"/>
+                <F N="src/jtag/core.c"/>
+                <F N="src/jtag/driver.h"/>
+                <F N="src/jtag/interface.c"/>
+                <F N="src/jtag/interface.h"/>
+                <F N="src/jtag/interfaces.c"/>
+                <F N="src/jtag/interfaces.h"/>
+                <F N="src/jtag/jtag.h"/>
+                <F
+                    N="src/jtag/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/jtag/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/jtag/minidriver.h"/>
+                <F N="src/jtag/startup.tcl"/>
+                <F N="src/jtag/swd.h"/>
+                <F N="src/jtag/tcl.c"/>
+                <F N="src/jtag/tcl.h"/>
+            </Folder>
+            <Folder Name="pld">
+                <F
+                    N="src/pld/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/pld/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/pld/pld.c"/>
+                <F N="src/pld/pld.h"/>
+                <F N="src/pld/virtex2.c"/>
+                <F N="src/pld/virtex2.h"/>
+                <F N="src/pld/xilinx_bit.c"/>
+                <F N="src/pld/xilinx_bit.h"/>
+            </Folder>
+            <Folder Name="rtos">
+                <F N="src/rtos/ChibiOS.c"/>
+                <F N="src/rtos/eCos.c"/>
+                <F N="src/rtos/embKernel.c"/>
+                <F N="src/rtos/FreeRTOS.c"/>
+                <F N="src/rtos/linux.c"/>
+                <F N="src/rtos/linux_header.h"/>
+                <F
+                    N="src/rtos/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/rtos/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/rtos/mqx.c"/>
+                <F N="src/rtos/rtos.c"/>
+                <F N="src/rtos/rtos.h"/>
+                <F N="src/rtos/rtos_chibios_stackings.c"/>
+                <F N="src/rtos/rtos_chibios_stackings.h"/>
+                <F N="src/rtos/rtos_ecos_stackings.c"/>
+                <F N="src/rtos/rtos_ecos_stackings.h"/>
+                <F N="src/rtos/rtos_embkernel_stackings.c"/>
+                <F N="src/rtos/rtos_embkernel_stackings.h"/>
+                <F N="src/rtos/rtos_mqx_stackings.c"/>
+                <F N="src/rtos/rtos_mqx_stackings.h"/>
+                <F N="src/rtos/rtos_standard_stackings.c"/>
+                <F N="src/rtos/rtos_standard_stackings.h"/>
+                <F N="src/rtos/scmRTOS.c"/>
+                <F N="src/rtos/ThreadX.c"/>
+            </Folder>
+            <Folder Name="server">
+                <F N="src/server/gdb_server.c"/>
+                <F N="src/server/gdb_server.h"/>
+                <F
+                    N="src/server/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/server/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/server/server.c"/>
+                <F N="src/server/server.h"/>
+                <F N="src/server/server_stubs.c"/>
+                <F N="src/server/startup.tcl"/>
+                <F N="src/server/tcl_server.c"/>
+                <F N="src/server/tcl_server.h"/>
+                <F N="src/server/telnet_server.c"/>
+                <F N="src/server/telnet_server.h"/>
+            </Folder>
+            <Folder Name="svf">
+                <F
+                    N="src/svf/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/svf/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/svf/svf.c"/>
+                <F N="src/svf/svf.h"/>
+            </Folder>
+            <Folder Name="target">
+                <Folder Name="openrisc">
+                    <F N="src/target/openrisc/jsp_server.c"/>
+                    <F N="src/target/openrisc/jsp_server.h"/>
+                    <F
+                        N="src/target/openrisc/Makefile.am"
+                        Type="Makefile"/>
+                    <F
+                        N="src/target/openrisc/Makefile.in"
+                        Type="Makefile"/>
+                    <F N="src/target/openrisc/or1k.c"/>
+                    <F N="src/target/openrisc/or1k.h"/>
+                    <F N="src/target/openrisc/or1k_du.h"/>
+                    <F N="src/target/openrisc/or1k_du_adv.c"/>
+                    <F N="src/target/openrisc/or1k_tap.h"/>
+                    <F N="src/target/openrisc/or1k_tap_mohor.c"/>
+                    <F N="src/target/openrisc/or1k_tap_vjtag.c"/>
+                    <F N="src/target/openrisc/or1k_tap_xilinx_bscan.c"/>
+                </Folder>
+                <Folder Name="xscale">
+                    <F N="src/target/xscale/build.sh"/>
+                    <F N="src/target/xscale/debug_handler.bin"/>
+                    <F N="src/target/xscale/debug_handler.cmd"/>
+                    <F N="src/target/xscale/debug_handler.S"/>
+                    <F N="src/target/xscale/protocol.h"/>
+                </Folder>
+                <F N="src/target/adi_v5_jtag.c"/>
+                <F N="src/target/adi_v5_swd.c"/>
+                <F N="src/target/algorithm.c"/>
+                <F N="src/target/algorithm.h"/>
+                <F N="src/target/arm.h"/>
+                <F N="src/target/arm11.c"/>
+                <F N="src/target/arm11.h"/>
+                <F N="src/target/arm11_dbgtap.c"/>
+                <F N="src/target/arm11_dbgtap.h"/>
+                <F N="src/target/arm720t.c"/>
+                <F N="src/target/arm720t.h"/>
+                <F N="src/target/arm7_9_common.c"/>
+                <F N="src/target/arm7_9_common.h"/>
+                <F N="src/target/arm7tdmi.c"/>
+                <F N="src/target/arm7tdmi.h"/>
+                <F N="src/target/arm920t.c"/>
+                <F N="src/target/arm920t.h"/>
+                <F N="src/target/arm926ejs.c"/>
+                <F N="src/target/arm926ejs.h"/>
+                <F N="src/target/arm946e.c"/>
+                <F N="src/target/arm946e.h"/>
+                <F N="src/target/arm966e.c"/>
+                <F N="src/target/arm966e.h"/>
+                <F N="src/target/arm9tdmi.c"/>
+                <F N="src/target/arm9tdmi.h"/>
+                <F N="src/target/arm_adi_v5.c"/>
+                <F N="src/target/arm_adi_v5.h"/>
+                <F N="src/target/arm_disassembler.c"/>
+                <F N="src/target/arm_disassembler.h"/>
+                <F N="src/target/arm_dpm.c"/>
+                <F N="src/target/arm_dpm.h"/>
+                <F N="src/target/arm_jtag.c"/>
+                <F N="src/target/arm_jtag.h"/>
+                <F N="src/target/arm_opcodes.h"/>
+                <F N="src/target/arm_semihosting.c"/>
+                <F N="src/target/arm_semihosting.h"/>
+                <F N="src/target/arm_simulator.c"/>
+                <F N="src/target/arm_simulator.h"/>
+                <F N="src/target/armv4_5.c"/>
+                <F N="src/target/armv4_5.h"/>
+                <F N="src/target/armv4_5_cache.c"/>
+                <F N="src/target/armv4_5_cache.h"/>
+                <F N="src/target/armv4_5_mmu.c"/>
+                <F N="src/target/armv4_5_mmu.h"/>
+                <F N="src/target/armv7a.c"/>
+                <F N="src/target/armv7a.h"/>
+                <F N="src/target/armv7a_cache.c"/>
+                <F N="src/target/armv7a_cache.h"/>
+                <F N="src/target/armv7a_cache_l2x.c"/>
+                <F N="src/target/armv7a_cache_l2x.h"/>
+                <F N="src/target/armv7m.c"/>
+                <F N="src/target/armv7m.h"/>
+                <F N="src/target/armv7m_trace.c"/>
+                <F N="src/target/armv7m_trace.h"/>
+                <F N="src/target/avr32_ap7k.c"/>
+                <F N="src/target/avr32_ap7k.h"/>
+                <F N="src/target/avr32_jtag.c"/>
+                <F N="src/target/avr32_jtag.h"/>
+                <F N="src/target/avr32_mem.c"/>
+                <F N="src/target/avr32_mem.h"/>
+                <F N="src/target/avr32_regs.c"/>
+                <F N="src/target/avr32_regs.h"/>
+                <F N="src/target/avrt.c"/>
+                <F N="src/target/avrt.h"/>
+                <F N="src/target/breakpoints.c"/>
+                <F N="src/target/breakpoints.h"/>
+                <F N="src/target/cortex_a.c"/>
+                <F N="src/target/cortex_a.h"/>
+                <F N="src/target/cortex_m.c"/>
+                <F N="src/target/cortex_m.h"/>
+                <F N="src/target/dsp563xx.c"/>
+                <F N="src/target/dsp563xx.h"/>
+                <F N="src/target/dsp563xx_once.c"/>
+                <F N="src/target/dsp563xx_once.h"/>
+                <F N="src/target/dsp5680xx.c"/>
+                <F N="src/target/dsp5680xx.h"/>
+                <F N="src/target/embeddedice.c"/>
+                <F N="src/target/embeddedice.h"/>
+                <F N="src/target/etb.c"/>
+                <F N="src/target/etb.h"/>
+                <F N="src/target/etm.c"/>
+                <F N="src/target/etm.h"/>
+                <F N="src/target/etm_dummy.c"/>
+                <F N="src/target/etm_dummy.h"/>
+                <F N="src/target/fa526.c"/>
+                <F N="src/target/feroceon.c"/>
+                <F N="src/target/hla_target.c"/>
+                <F N="src/target/image.c"/>
+                <F N="src/target/image.h"/>
+                <F N="src/target/lakemont.c"/>
+                <F N="src/target/lakemont.h"/>
+                <F
+                    N="src/target/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/target/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/target/mips32.c"/>
+                <F N="src/target/mips32.h"/>
+                <F N="src/target/mips32_dmaacc.c"/>
+                <F N="src/target/mips32_dmaacc.h"/>
+                <F N="src/target/mips32_pracc.c"/>
+                <F N="src/target/mips32_pracc.h"/>
+                <F N="src/target/mips_ejtag.c"/>
+                <F N="src/target/mips_ejtag.h"/>
+                <F N="src/target/mips_m4k.c"/>
+                <F N="src/target/mips_m4k.h"/>
+                <F N="src/target/nds32.c"/>
+                <F N="src/target/nds32.h"/>
+                <F N="src/target/nds32_aice.c"/>
+                <F N="src/target/nds32_aice.h"/>
+                <F N="src/target/nds32_cmd.c"/>
+                <F N="src/target/nds32_cmd.h"/>
+                <F N="src/target/nds32_disassembler.c"/>
+                <F N="src/target/nds32_disassembler.h"/>
+                <F N="src/target/nds32_edm.h"/>
+                <F N="src/target/nds32_insn.h"/>
+                <F N="src/target/nds32_reg.c"/>
+                <F N="src/target/nds32_reg.h"/>
+                <F N="src/target/nds32_tlb.c"/>
+                <F N="src/target/nds32_tlb.h"/>
+                <F N="src/target/nds32_v2.c"/>
+                <F N="src/target/nds32_v2.h"/>
+                <F N="src/target/nds32_v3.c"/>
+                <F N="src/target/nds32_v3.h"/>
+                <F N="src/target/nds32_v3_common.c"/>
+                <F N="src/target/nds32_v3_common.h"/>
+                <F N="src/target/nds32_v3m.c"/>
+                <F N="src/target/nds32_v3m.h"/>
+                <F N="src/target/oocd_trace.c"/>
+                <F N="src/target/oocd_trace.h"/>
+                <F N="src/target/quark_d20xx.c"/>
+                <F N="src/target/quark_x10xx.c"/>
+                <F N="src/target/register.c"/>
+                <F N="src/target/register.h"/>
+                <F N="src/target/smp.c"/>
+                <F N="src/target/smp.h"/>
+                <F N="src/target/startup.tcl"/>
+                <F N="src/target/target.c"/>
+                <F N="src/target/target.h"/>
+                <F N="src/target/target_request.c"/>
+                <F N="src/target/target_request.h"/>
+                <F N="src/target/target_type.h"/>
+                <F N="src/target/testee.c"/>
+                <F N="src/target/trace.c"/>
+                <F N="src/target/trace.h"/>
+                <F N="src/target/x86_32_common.c"/>
+                <F N="src/target/x86_32_common.h"/>
+                <F N="src/target/xscale.c"/>
+                <F N="src/target/xscale.h"/>
+            </Folder>
+            <Folder Name="transport">
+                <F
+                    N="src/transport/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/transport/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/transport/transport.c"/>
+                <F N="src/transport/transport.h"/>
+            </Folder>
+            <Folder Name="xsvf">
+                <F
+                    N="src/xsvf/Makefile.am"
+                    Type="Makefile"/>
+                <F
+                    N="src/xsvf/Makefile.in"
+                    Type="Makefile"/>
+                <F N="src/xsvf/xsvf.c"/>
+                <F N="src/xsvf/xsvf.h"/>
+            </Folder>
+            <F N="src/hello.c"/>
+            <F N="src/hello.h"/>
+            <F N="src/main.c"/>
+            <F
+                N="src/Makefile.am"
+                Type="Makefile"/>
+            <F
+                N="src/Makefile.in"
+                Type="Makefile"/>
+            <F N="src/openocd.c"/>
+            <F N="src/openocd.h"/>
+        </Folder>
+    </Files>
+</Project>
