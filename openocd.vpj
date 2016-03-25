@@ -45,6 +45,15 @@
                 CaptureOutputWith="ProcessBuffer">
                 <Exec CmdLine="scons -Q -s -D load"/>
             </Target>
+            <Target
+                Name="Install"
+                MenuCaption="&amp;Install"
+                RunFromDir="%rw/../build"
+                CaptureOutputWith="ProcessBuffer"
+                SaveOption="SaveNone"
+                ClearProcessBuffer="1">
+                <Exec CmdLine="make install"/>
+            </Target>
         </Menu>
     </Config>
     <CustomFolders>
