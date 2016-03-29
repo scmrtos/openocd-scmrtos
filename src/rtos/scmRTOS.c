@@ -411,7 +411,7 @@ int renew_proc_info(struct rtos   *rtos,
         
         rtos->thread_details[i].threadid        = os_processes[i].Priority + 1;
         rtos->thread_details[i].exists          = true;
-        rtos->thread_details[i].display_str     = malloc(16); // NULL;
+        rtos->thread_details[i].display_str     = malloc(16);;
         rtos->thread_details[i].thread_name_str = malloc(16); //NULL;
         rtos->thread_details[i].extra_info_str  = malloc(info_str_size);
         if (!rtos->thread_details[i].extra_info_str) 
@@ -419,9 +419,24 @@ int renew_proc_info(struct rtos   *rtos,
             LOG_ERROR("scmRTOS> E: allocating memory for process extra info string");
             return ERROR_FAIL;
         }
+
+//      char tmp_str[16];
+//      char *ptr = tmp_str;
+//      ptr += sprintf(tmp_str, "%s %d", "Prio", os_processes[i].Priority);
+        sprintf(rtos->thread_details[i].display_str, "%s %d", "Prio", os_processes[i].Priority);
+        
+        //strcpy(rtos->thread_details[i].display_str,   "");
         strcpy(rtos->thread_details[i].extra_info_str, info_str);
-        strcpy(rtos->thread_details[i].display_str, "slon");
-        strcpy(rtos->thread_details[i].thread_name_str, "mamont");
+
+        if( (  os_info->ReversePrioOrder && os_processes[i].Priority == 0  ) ||
+            ( !os_info->ReversePrioOrder && os_processes[i].Priority == os_kernel->PROC_COUNT-1) )
+        {
+            strcpy(rtos->thread_details[i].thread_name_str, "IdleProc");
+        }
+        else 
+        {
+            strcpy(rtos->thread_details[i].thread_name_str, "NoName  ");
+        }
     }
     return ERROR_OK;
 }
