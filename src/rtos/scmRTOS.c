@@ -1,4 +1,25 @@
-
+/***************************************************************************
+ *   Copyright (C) 2011 by Broadcom Corporation                            *
+ *   Evan Hunter - ehunter@broadcom.com                                    *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.           *
+ ***************************************************************************/
+//
+//   scmRTOS support by Harry E. Zhurov, scmRTOS Team, Copyright (c) 2016
+//
 
 
 //------------------------------------------------------------------------------
@@ -22,7 +43,6 @@ static int scmRTOS_create                    (struct target *target);
 static int scmRTOS_update_proc_info          (struct rtos *rtos);
 static int scmRTOS_get_proc_reg_list         (struct rtos *rtos, int64_t thread_id, char **hex_reg_list);
 static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]);
-
 //------------------------------------------------------------------------------
 //
 //    General
@@ -128,6 +148,10 @@ typedef struct
 }
 os_process_t;
 //------------------------------------------------------------------------------
+static int get_kernel_data   (struct rtos *rtos, os_info_t *os_info, const scmRTOS_params_t *params, os_kernel_t *os_kernel);
+static int get_processes_data(struct rtos *rtos, os_info_t *os_info, os_kernel_t *os_kernel, const scmRTOS_params_t *params, os_process_t*os_processes);
+static int renew_proc_info   (struct rtos *rtos, os_info_t *os_info, os_kernel_t  *os_kernel, os_process_t *os_processes);
+//------------------------------------------------------------------------------
 //
 //    Objects
 //
@@ -177,7 +201,7 @@ static const int TARGET_COUNT     = sizeof(scmRTOS_params)/sizeof(scmRTOS_params
 static const int SYMBOL_COUNT     = sizeof(scmRTOS_symbols)/sizeof(scmRTOS_symbols[0]);
 //------------------------------------------------------------------------------
 //
-//    Functions
+//    Interface
 //
 //------------------------------------------------------------------------------
 int scmRTOS_detect_rtos(struct target *target)
@@ -209,6 +233,153 @@ int scmRTOS_create (struct target *target)
     target->rtos->rtos_specific_params = (void *) &scmRTOS_params[i];
     return 0;
 }
+//------------------------------------------------------------------------------
+int scmRTOS_update_proc_info (struct rtos *rtos)
+{
+    LOG_DBG("scmRTOS> scmRTOS_update_proc_info \r\n");
+    //----------------------------------------------------------------
+    //
+    //    Setup local RTOS parameters object
+    //
+    if (rtos->rtos_specific_params == NULL)
+        return -1;
+
+    const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
+
+    //----------------------------------------------------------------
+    //
+    //    Check RTOS symbols
+    //
+    if (rtos->symbols == NULL) {
+        LOG_ERROR("scmRTOS> E: no symbols specified");
+        return -3;
+    }
+
+    if (rtos->symbols[SID_KERNEL].address == 0) {
+        LOG_ERROR("scmRTOS> E: OS::Kernel address does not known");
+        return -2;
+    }
+    if (rtos->symbols[SID_PROCESS_TABLE].address == 0) {
+        LOG_ERROR("scmRTOS> E: OS::TKernel::ProcessTable address does not known");
+        return -2;
+    }
+    if (rtos->symbols[SID_IDLE_PROC].address == 0) {
+        LOG_ERROR("scmRTOS> E: OS::IdleProc address does not known");
+        return -2;
+    }
+
+    os_info_t os_info = 
+    {
+        rtos->symbols[SID_KERNEL].address,
+        rtos->symbols[SID_PROCESS_TABLE].address,
+        rtos->symbols[SID_IDLE_PROC].address,
+        false,                                      // reverse prority order
+        { 0 }
+    };
+    
+    //----------------------------------------------------------------
+    //
+    //    Get OS::Kernel data
+    //
+    os_kernel_t os_kernel;
+    int res = get_kernel_data(rtos, &os_info, params, &os_kernel);
+    
+    if (res != ERROR_OK) 
+    {
+        LOG_ERROR("scmRTOS> E: could not get kernel data");
+        return res;
+    }
+    if(os_kernel.CurProcPriority > MAX_PROC_COUNT)
+    {
+        LOG_DBG("scmRTOS> I: RTOS does not run yet\r\n");
+        return ERROR_WAIT;
+    }
+
+    //----------------------------------------------------------------
+    //
+    //    Get RTOS processes data
+    //
+    os_process_t os_processes[MAX_PROC_COUNT];
+    res = get_processes_data(rtos, &os_info, &os_kernel, params, os_processes);
+    if (res != ERROR_OK) 
+    {
+        LOG_ERROR("scmRTOS> E: could not get processes data");
+        return res;
+    }
+
+    rtos_free_threadlist(rtos);   // delete previous process details if any
+
+    res = renew_proc_info(rtos, &os_info, &os_kernel, os_processes);
+    if (res != ERROR_OK) 
+    {
+        LOG_ERROR("scmRTOS> E: could not renew processes info");
+        return res;
+    }
+    
+    rtos->thread_count = os_kernel.PROC_COUNT;
+    LOG_OUTPUT("***************************************\r\n");
+    LOG_OUTPUT("scmRTOS> %u processes, CurProcPriority: %d\n", os_kernel.PROC_COUNT, os_kernel.CurProcPriority);
+
+    return ERROR_OK;
+}
+//------------------------------------------------------------------------------
+int scmRTOS_get_proc_reg_list (struct rtos *rtos, int64_t thread_id, char **hex_reg_list)
+{
+    int      res;
+    uint32_t stack_ptr = 0;
+
+    *hex_reg_list = NULL;
+    if (rtos == NULL)
+        return -1;
+
+    if (thread_id == 0 || thread_id > MAX_PROC_COUNT+1)
+        return -2;
+
+    if (rtos->rtos_specific_params == NULL)
+        return -1;
+
+    const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
+    
+
+    uint32_t sp_addr = ProcessTable[thread_id-1] + params->StackPointer_offset;
+    // Read the stack pointer
+    res = target_read_buffer(rtos->target, 
+                             sp_addr,
+                             params->pointer_size,
+                             (uint8_t *)&stack_ptr);
+    if (res != ERROR_OK) 
+    {
+        LOG_ERROR("scmRTOS> E: could not read stack pointer value");
+        return res;
+    }
+    LOG_DBG("scmRTOS> I: process stack pointer at 0x%x, value 0x%x\r\n", sp_addr, stack_ptr);
+
+    return rtos_generic_stack_read(rtos->target, params->stacking_info, stack_ptr, hex_reg_list);
+    
+}
+//------------------------------------------------------------------------------
+int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[])
+{
+     *symbol_list = calloc( SYMBOL_COUNT, sizeof(symbol_table_elem_t) );
+    if(!*symbol_list)
+    {
+        LOG_ERROR("scmRTOS> E: could not allocate memory for symbol list");
+        return -1;
+    }
+
+    for(int i = 0; i < SYMBOL_COUNT; ++i) 
+    {
+        (*symbol_list)[i].symbol_name = scmRTOS_symbols[i].name;
+        (*symbol_list)[i].address     = 0;
+        (*symbol_list)[i].optional    = scmRTOS_symbols[i].optional;
+    }
+
+    return 0;
+}
+//------------------------------------------------------------------------------
+//
+//    Internal Functions
+//
 //------------------------------------------------------------------------------
 int get_kernel_data(struct rtos            *rtos, 
                     os_info_t              *os_info, 
@@ -420,12 +591,7 @@ int renew_proc_info(struct rtos   *rtos,
             return ERROR_FAIL;
         }
 
-//      char tmp_str[16];
-//      char *ptr = tmp_str;
-//      ptr += sprintf(tmp_str, "%s %d", "Prio", os_processes[i].Priority);
         sprintf(rtos->thread_details[i].display_str, "%s %d", "Prio", os_processes[i].Priority);
-        
-        //strcpy(rtos->thread_details[i].display_str,   "");
         strcpy(rtos->thread_details[i].extra_info_str, info_str);
 
         if( (  os_info->ReversePrioOrder && os_processes[i].Priority == 0  ) ||
@@ -439,149 +605,6 @@ int renew_proc_info(struct rtos   *rtos,
         }
     }
     return ERROR_OK;
-}
-//------------------------------------------------------------------------------
-int scmRTOS_update_proc_info (struct rtos *rtos)
-{
-    LOG_DBG("scmRTOS> scmRTOS_update_proc_info \r\n");
-    //----------------------------------------------------------------
-    //
-    //    Setup local RTOS parameters object
-    //
-    if (rtos->rtos_specific_params == NULL)
-        return -1;
-
-    const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
-
-    //----------------------------------------------------------------
-    //
-    //    Check RTOS symbols
-    //
-    if (rtos->symbols == NULL) {
-        LOG_ERROR("scmRTOS> E: no symbols specified");
-        return -3;
-    }
-
-    if (rtos->symbols[SID_KERNEL].address == 0) {
-        LOG_ERROR("scmRTOS> E: OS::Kernel address does not known");
-        return -2;
-    }
-    if (rtos->symbols[SID_PROCESS_TABLE].address == 0) {
-        LOG_ERROR("scmRTOS> E: OS::TKernel::ProcessTable address does not known");
-        return -2;
-    }
-    if (rtos->symbols[SID_IDLE_PROC].address == 0) {
-        LOG_ERROR("scmRTOS> E: OS::IdleProc address does not known");
-        return -2;
-    }
-
-    os_info_t os_info = 
-    {
-        rtos->symbols[SID_KERNEL].address,
-        rtos->symbols[SID_PROCESS_TABLE].address,
-        rtos->symbols[SID_IDLE_PROC].address,
-        false,                                      // reverse prority order
-        { 0 }
-    };
-    
-    //----------------------------------------------------------------
-    //
-    //    Get OS::Kernel data
-    //
-    os_kernel_t os_kernel;
-    int res = get_kernel_data(rtos, &os_info, params, &os_kernel);
-    
-    if (res != ERROR_OK) 
-    {
-        LOG_ERROR("scmRTOS> E: could not get kernel data");
-        return res;
-    }
-    if(os_kernel.CurProcPriority > MAX_PROC_COUNT)
-    {
-        LOG_DBG("scmRTOS> I: RTOS does not run yet\r\n");
-        return ERROR_WAIT;
-    }
-
-    //----------------------------------------------------------------
-    //
-    //    Get RTOS processes data
-    //
-    os_process_t os_processes[MAX_PROC_COUNT];
-    res = get_processes_data(rtos, &os_info, &os_kernel, params, os_processes);
-    if (res != ERROR_OK) 
-    {
-        LOG_ERROR("scmRTOS> E: could not get processes data");
-        return res;
-    }
-
-    rtos_free_threadlist(rtos);   // delete previous process details if any
-
-    res = renew_proc_info(rtos, &os_info, &os_kernel, os_processes);
-    if (res != ERROR_OK) 
-    {
-        LOG_ERROR("scmRTOS> E: could not renew processes info");
-        return res;
-    }
-    
-    rtos->thread_count = os_kernel.PROC_COUNT;
-    LOG_OUTPUT("***************************************\r\n");
-    LOG_OUTPUT("scmRTOS> %u processes, CurProcPriority: %d\n", os_kernel.PROC_COUNT, os_kernel.CurProcPriority);
-
-    return ERROR_OK;
-}
-//------------------------------------------------------------------------------
-int scmRTOS_get_proc_reg_list (struct rtos *rtos, int64_t thread_id, char **hex_reg_list)
-{
-    int      res;
-    uint32_t stack_ptr = 0;
-
-    *hex_reg_list = NULL;
-    if (rtos == NULL)
-        return -1;
-
-    if (thread_id == 0 || thread_id > MAX_PROC_COUNT+1)
-        return -2;
-
-    if (rtos->rtos_specific_params == NULL)
-        return -1;
-
-    const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
-    
-
-    uint32_t sp_addr = ProcessTable[thread_id-1] + params->StackPointer_offset;
-    // Read the stack pointer
-    res = target_read_buffer(rtos->target, 
-                             sp_addr,
-                             params->pointer_size,
-                             (uint8_t *)&stack_ptr);
-    if (res != ERROR_OK) 
-    {
-        LOG_ERROR("scmRTOS> E: could not read stack pointer value");
-        return res;
-    }
-    LOG_DBG("scmRTOS> I: process stack pointer at 0x%x, value 0x%x\r\n", sp_addr, stack_ptr);
-
-    return rtos_generic_stack_read(rtos->target, params->stacking_info, stack_ptr, hex_reg_list);
-    
-}
-//------------------------------------------------------------------------------
-int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[])
-{
-     *symbol_list = calloc( SYMBOL_COUNT, sizeof(symbol_table_elem_t) );
-    if(!*symbol_list)
-    {
-        LOG_ERROR("scmRTOS> E: could not allocate memory for symbol list");
-        return -1;
-    }
-
-    for(int i = 0; i < SYMBOL_COUNT; ++i) 
-    {
-        (*symbol_list)[i].symbol_name = scmRTOS_symbols[i].name;
-        (*symbol_list)[i].address     = 0;
-        (*symbol_list)[i].optional    = scmRTOS_symbols[i].optional;
-    }
-
-    return 0;
 }
 //------------------------------------------------------------------------------
 
