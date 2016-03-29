@@ -171,6 +171,8 @@ static const scmRTOS_params_t scmRTOS_params[] =
     }
 };
 //------------------------------------------------------------------------------
+static uint32_t ProcessTable[MAX_PROC_COUNT];
+//------------------------------------------------------------------------------
 static const int TARGET_COUNT     = sizeof(scmRTOS_params)/sizeof(scmRTOS_params[0]);
 static const int SYMBOL_COUNT     = sizeof(scmRTOS_symbols)/sizeof(scmRTOS_symbols[0]);
 //------------------------------------------------------------------------------
@@ -322,6 +324,11 @@ int get_processes_data(struct rtos            *rtos,
         if(res != ERROR_OK)
             return res;
         os_processes[i].Priority = value;
+        
+        if(os_processes[i].Priority > MAX_PROC_COUNT)
+        {
+            LOG_ERROR("scmRTOS> E: invalid process priority value: %d", os_processes[i].Priority);
+        }
 
         LOG_DBG("scmRTOS> I: process index: %d at 0x%x > SP: 0x%x, Timeout: %d, Priority: %d\r\n", 
                   i, ProcAddr, 
@@ -383,7 +390,7 @@ int renew_proc_info(struct rtos   *rtos,
         {
             if( os_kernel->CurProcPriority == os_processes[i].Priority )
             {
-                rtos->current_thread = ProcAddr;
+                rtos->current_thread = os_processes[i].Priority + 1;
                 info_str             = Active;
                 info_str_size        = sizeof(Active);
                 LOG_DBG("scmRTOS> I: current process index %d, addr 0x%x\r\n", i, ProcAddr);
@@ -400,7 +407,9 @@ int renew_proc_info(struct rtos   *rtos,
             info_str_size = sizeof(Suspended);
         }
 
-        rtos->thread_details[i].threadid        = ProcAddr;
+        ProcessTable[os_processes[i].Priority] = ProcAddr;
+        
+        rtos->thread_details[i].threadid        = os_processes[i].Priority + 1;
         rtos->thread_details[i].exists          = true;
         rtos->thread_details[i].display_str     = malloc(16); // NULL;
         rtos->thread_details[i].thread_name_str = malloc(16); //NULL;
@@ -493,15 +502,6 @@ int scmRTOS_update_proc_info (struct rtos *rtos)
     rtos_free_threadlist(rtos);   // delete previous process details if any
 
     res = renew_proc_info(rtos, &os_info, &os_kernel, os_processes);
-//  for(unsigned i = 0; i < os_kernel.PROC_COUNT; ++i)
-//  {
-//      LOG_DBG("Proc addr      : 0x%lx\r\n", rtos->thread_details[i].threadid);
-//      LOG_DBG("exists         : %d\r\n",   rtos->thread_details[i].exists);
-//      LOG_DBG("display str    : %s\r\n",   rtos->thread_details[i].display_str    );
-//      LOG_DBG("thread_name_str: %s\r\n",   rtos->thread_details[i].thread_name_str);
-//      LOG_DBG("extra_info_str : %s\r\n",   rtos->thread_details[i].extra_info_str );
-//  }
-
     if (res != ERROR_OK) 
     {
         LOG_ERROR("scmRTOS> E: could not renew processes info");
@@ -524,7 +524,7 @@ int scmRTOS_get_proc_reg_list (struct rtos *rtos, int64_t thread_id, char **hex_
     if (rtos == NULL)
         return -1;
 
-    if (thread_id == 0)
+    if (thread_id == 0 || thread_id > MAX_PROC_COUNT+1)
         return -2;
 
     if (rtos->rtos_specific_params == NULL)
@@ -532,7 +532,8 @@ int scmRTOS_get_proc_reg_list (struct rtos *rtos, int64_t thread_id, char **hex_
 
     const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
     
-    uint32_t sp_addr = thread_id + params->StackPointer_offset;
+
+    uint32_t sp_addr = ProcessTable[thread_id-1] + params->StackPointer_offset;
     // Read the stack pointer
     res = target_read_buffer(rtos->target, 
                              sp_addr,
