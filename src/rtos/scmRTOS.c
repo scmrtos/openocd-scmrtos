@@ -27,6 +27,8 @@ static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]
 //
 //    General
 //
+#define LOG_DBG LOG_OUTPUT // LOG_DEBUG
+
 #define TARGET_POINTER_SIZE 4
 #define MAX_PROC_COUNT      31
 //--------------------------------------------------------------------
@@ -37,7 +39,9 @@ static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]
 #define CUR_PROC_PRIORITY_SIZE    4
 #define READY_PROCESS_MAP_OFFSET  (CUR_PROC_PRIORITY_OFFSET + CUR_PROC_PRIORITY_SIZE)
 #define READY_PROCESS_MAP_SIZE    4
-#define PROC_COUNT_OFFSET         (READY_PROCESS_MAP_OFFSET + READY_PROCESS_MAP_SIZE)
+#define ISR_NEST_COUNT_OFFSET     (READY_PROCESS_MAP_OFFSET + READY_PROCESS_MAP_SIZE)
+#define ISR_NEST_COUNT_SIZE       4
+#define PROC_COUNT_OFFSET         (ISR_NEST_COUNT_OFFSET + ISR_NEST_COUNT_SIZE)
 #define PROC_COUNT_SIZE           4
 //--------------------------------------------------------------------
 //
@@ -210,6 +214,8 @@ int get_kernel_data(struct rtos            *rtos,
                     os_kernel_t            *os_kernel)
 {
 
+    LOG_DBG("scmRTOS> get_kernel_data \r\n");
+    
     uint32_t addr;
     uint32_t size;
     int      res;
@@ -217,10 +223,10 @@ int get_kernel_data(struct rtos            *rtos,
     //  CurProcCount
     addr = os_info->KernelAddr + params->CurProcPriority_offset;
     size = params->CurProcPriority_size;
-    res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_kernel->CurProcPriority);
+    res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_kernel->CurProcPriority);
     if(res != ERROR_OK)
         return res;
-    LOG_DEBUG("scmRTOS> I: CurProcPriority at 0x%x = %d\r\n", addr, os_kernel->CurProcPriority);
+    LOG_DBG("scmRTOS> I: CurProcPriority at 0x%x = %d\r\n", addr, os_kernel->CurProcPriority);
 
     //  ReadyProcessMap
     addr = os_info->KernelAddr + params->ReadyProcessMap_offset;
@@ -228,22 +234,31 @@ int get_kernel_data(struct rtos            *rtos,
     res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_kernel->ReadyProcessMap);
     if(res != ERROR_OK)
         return res;
-    LOG_DEBUG("scmRTOS> I: ReadyProcessMap at 0x%x = %d\r\n", addr, os_kernel->ReadyProcessMap);
+    LOG_DBG("scmRTOS> I: ReadyProcessMap at 0x%x = %d\r\n", addr, os_kernel->ReadyProcessMap);
 
     //  PROC_COUNT
     addr = os_info->KernelAddr + params->PROC_COUNT_offset;
     size = params->PROC_COUNT_size;
-    res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_kernel->PROC_COUNT);
+    res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_kernel->PROC_COUNT);
     if(res != ERROR_OK)
         return res;
-    LOG_DEBUG("scmRTOS> I: PROC_COUNT at 0x%x = %d\r\n", addr, os_kernel->PROC_COUNT);
+    LOG_DBG("scmRTOS> I: PROC_COUNT at 0x%x = %d\r\n", addr, os_kernel->PROC_COUNT);
     
+    if(os_kernel->PROC_COUNT > MAX_PROC_COUNT || 
+       os_kernel->CurProcPriority > os_kernel->PROC_COUNT ||
+       os_kernel->CurProcPriority == MAX_PROC_COUNT+1)   // os not run yet
+    {
+        LOG_DBG("scmRTOS> I: RTOS does not run yet\r\n");
+        return ERROR_WAIT;
+    }
+
     //  ProcessTable
     addr = os_info->ProcessTableAddr;
     size = (os_kernel->PROC_COUNT)*(params->pointer_size);
-    res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_info->ProcessTable);
+    res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_info->ProcessTable);
     if(res != ERROR_OK)
         return res;
+    
 
     for(unsigned i = 0; i < os_kernel->PROC_COUNT; ++i)
     {
@@ -252,9 +267,9 @@ int get_kernel_data(struct rtos            *rtos,
     
     //  Check Reverse Priority Order
     addr = os_info->IdleProcAddr + params->Priority_offset;
-    size =params->Priority_size;
+    size = params->Priority_size;
     uint32_t IdleProcPriority;
-    res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&IdleProcPriority);
+    res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&IdleProcPriority);
     if(res != ERROR_OK)
         return res;
     
@@ -262,7 +277,7 @@ int get_kernel_data(struct rtos            *rtos,
     {
         os_info->ReversePrioOrder = true;
     }
-    LOG_DEBUG("scmRTOS> I: Reverse Process Priority is %s\r\n", os_info->ReversePrioOrder ? "true" : "false");
+    LOG_DBG("scmRTOS> I: Reverse Process Priority is %s\r\n", os_info->ReversePrioOrder ? "true" : "false");
     
     return ERROR_OK;
 
@@ -274,6 +289,7 @@ int get_processes_data(struct rtos            *rtos,
                        const scmRTOS_params_t *params, 
                        os_process_t           *os_processes)
 {
+    LOG_DBG("scmRTOS> get_processes_data \r\n");
     for(unsigned i = 0; i < os_kernel->PROC_COUNT; ++i)
     {
         uint32_t addr;
@@ -286,7 +302,7 @@ int get_processes_data(struct rtos            *rtos,
         //  Stack Pointer
         addr = ProcAddr + params->StackPointer_offset;
         size = params->StackPointer_size;
-        res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&value);
+        res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&value);
         if(res != ERROR_OK)
             return res;
         os_processes[i].StackPointer = value;
@@ -294,7 +310,7 @@ int get_processes_data(struct rtos            *rtos,
         // Timeout
         addr = ProcAddr + params->Timeout_offset;
         size = params->Timeout_size;
-        res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&value);
+        res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&value);
         if(res != ERROR_OK)
             return res;
         os_processes[i].Timeout = value;
@@ -302,12 +318,12 @@ int get_processes_data(struct rtos            *rtos,
         // Priority
         addr = ProcAddr + params->Priority_offset;
         size = params->Priority_size;
-        res = target_read_buffer(rtos->target, addr, size, (uint8_t *)&value);
+        res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&value);
         if(res != ERROR_OK)
             return res;
         os_processes[i].Priority = value;
 
-        LOG_DEBUG("scmRTOS> I: process index: %d at 0x%x > SP: 0x%x, Timeout: %d, Priority: %d\r\n", 
+        LOG_DBG("scmRTOS> I: process index: %d at 0x%x > SP: 0x%x, Timeout: %d, Priority: %d\r\n", 
                   i, ProcAddr, 
                   os_processes[i].StackPointer, 
                   os_processes[i].Timeout,
@@ -316,12 +332,13 @@ int get_processes_data(struct rtos            *rtos,
     return ERROR_OK;
 }
 //------------------------------------------------------------------------------
-int renew_proc_info(struct rtos  *rtos,
+int renew_proc_info(struct rtos   *rtos,
                      os_info_t    *os_info,
                      os_kernel_t  *os_kernel, 
                      os_process_t *os_processes)
 {
     
+    LOG_DBG("scmRTOS> renew_proc_info \r\n");
     uint32_t proc_count = os_kernel->PROC_COUNT;
     rtos->thread_details = malloc( sizeof(struct thread_detail)*proc_count );
     if (!rtos->thread_details) 
@@ -338,12 +355,12 @@ int renew_proc_info(struct rtos  *rtos,
         uint32_t PrioMask = 0x00000001;
         if(os_info->ReversePrioOrder)
         {
-            PrioMask <<= os_kernel->PROC_COUNT-1;
-            PrioMask >>= os_processes[i].Priority;
+            PrioMask <<= os_processes[i].Priority;
         }
         else
         {
-            PrioMask <<= os_processes[i].Priority;
+            PrioMask <<= os_kernel->PROC_COUNT-1;
+            PrioMask >>= os_processes[i].Priority;
         }
 
         if(os_kernel->ReadyProcessMap & PrioMask)
@@ -369,6 +386,7 @@ int renew_proc_info(struct rtos  *rtos,
                 rtos->current_thread = ProcAddr;
                 info_str             = Active;
                 info_str_size        = sizeof(Active);
+                LOG_DBG("scmRTOS> I: current process index %d, addr 0x%x\r\n", i, ProcAddr);
             }
             else
             {
@@ -384,21 +402,24 @@ int renew_proc_info(struct rtos  *rtos,
 
         rtos->thread_details[i].threadid        = ProcAddr;
         rtos->thread_details[i].exists          = true;
-        rtos->thread_details[i].display_str     = NULL;
-        rtos->thread_details[i].thread_name_str = NULL;
+        rtos->thread_details[i].display_str     = malloc(16); // NULL;
+        rtos->thread_details[i].thread_name_str = malloc(16); //NULL;
         rtos->thread_details[i].extra_info_str  = malloc(info_str_size);
         if (!rtos->thread_details[i].extra_info_str) 
         {
             LOG_ERROR("scmRTOS> E: allocating memory for process extra info string");
             return ERROR_FAIL;
         }
-        strcpy(rtos->thread_details->thread_name_str, info_str);
+        strcpy(rtos->thread_details[i].extra_info_str, info_str);
+        strcpy(rtos->thread_details[i].display_str, "slon");
+        strcpy(rtos->thread_details[i].thread_name_str, "mamont");
     }
     return ERROR_OK;
 }
 //------------------------------------------------------------------------------
 int scmRTOS_update_proc_info (struct rtos *rtos)
 {
+    LOG_DBG("scmRTOS> scmRTOS_update_proc_info \r\n");
     //----------------------------------------------------------------
     //
     //    Setup local RTOS parameters object
@@ -451,8 +472,11 @@ int scmRTOS_update_proc_info (struct rtos *rtos)
         LOG_ERROR("scmRTOS> E: could not get kernel data");
         return res;
     }
-    rtos->thread_count = os_kernel.PROC_COUNT;
-    LOG_OUTPUT("scmRTOS> %u processes, CurProcPriority: %d\n", os_kernel.PROC_COUNT, os_kernel.CurProcPriority);
+    if(os_kernel.CurProcPriority > MAX_PROC_COUNT)
+    {
+        LOG_DBG("scmRTOS> I: RTOS does not run yet\r\n");
+        return ERROR_WAIT;
+    }
 
     //----------------------------------------------------------------
     //
@@ -466,15 +490,28 @@ int scmRTOS_update_proc_info (struct rtos *rtos)
         return res;
     }
 
-    rtos_free_threadlist(rtos);   // wipe out previous process details if any
+    rtos_free_threadlist(rtos);   // delete previous process details if any
 
     res = renew_proc_info(rtos, &os_info, &os_kernel, os_processes);
+//  for(unsigned i = 0; i < os_kernel.PROC_COUNT; ++i)
+//  {
+//      LOG_DBG("Proc addr      : 0x%lx\r\n", rtos->thread_details[i].threadid);
+//      LOG_DBG("exists         : %d\r\n",   rtos->thread_details[i].exists);
+//      LOG_DBG("display str    : %s\r\n",   rtos->thread_details[i].display_str    );
+//      LOG_DBG("thread_name_str: %s\r\n",   rtos->thread_details[i].thread_name_str);
+//      LOG_DBG("extra_info_str : %s\r\n",   rtos->thread_details[i].extra_info_str );
+//  }
+
     if (res != ERROR_OK) 
     {
         LOG_ERROR("scmRTOS> E: could not renew processes info");
         return res;
     }
     
+    rtos->thread_count = os_kernel.PROC_COUNT;
+    LOG_OUTPUT("***************************************\r\n");
+    LOG_OUTPUT("scmRTOS> %u processes, CurProcPriority: %d\n", os_kernel.PROC_COUNT, os_kernel.CurProcPriority);
+
     return ERROR_OK;
 }
 //------------------------------------------------------------------------------
@@ -501,11 +538,12 @@ int scmRTOS_get_proc_reg_list (struct rtos *rtos, int64_t thread_id, char **hex_
                              sp_addr,
                              params->pointer_size,
                              (uint8_t *)&stack_ptr);
-    if (res != ERROR_OK) {
+    if (res != ERROR_OK) 
+    {
         LOG_ERROR("scmRTOS> E: could not read stack pointer value");
         return res;
     }
-    LOG_DEBUG("scmRTOS> I: process stack pointer at 0x%x, value 0x%x\r\n", sp_addr, stack_ptr);
+    LOG_DBG("scmRTOS> I: process stack pointer at 0x%x, value 0x%x\r\n", sp_addr, stack_ptr);
 
     return rtos_generic_stack_read(rtos->target, params->stacking_info, stack_ptr, hex_reg_list);
     
