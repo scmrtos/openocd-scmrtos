@@ -378,13 +378,10 @@ int scmRTOS_get_symbol_list_to_lookup(symbol_table_elem_t *symbol_list[])
 //    Internal Functions
 //
 //------------------------------------------------------------------------------
-int get_kernel_data(struct rtos            *rtos, 
-                    os_info_t              *os_info, 
-                    os_kernel_t            *os_kernel)
+int get_kernel_data(struct rtos *rtos, 
+                    os_info_t   *os_info, 
+                    os_kernel_t *os_kernel)
 {
-
-    LOG_DBG("scmRTOS> get_kernel_data \r\n");
-    
     uint32_t addr;
     uint32_t size;
     int      res;
@@ -454,13 +451,11 @@ int get_kernel_data(struct rtos            *rtos,
 
 }
 //------------------------------------------------------------------------------
-int get_processes_data(struct rtos            *rtos, 
-                       os_info_t              *os_info,
-                       os_kernel_t            *os_kernel, 
-                       os_process_t           *os_processes)
+int get_processes_data(struct rtos  *rtos, 
+                       os_info_t    *os_info,
+                       os_kernel_t  *os_kernel, 
+                       os_process_t *os_processes)
 {
-    LOG_DBG("scmRTOS> get_processes_data \r\n");
-    
     const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
     
     for(unsigned i = 0; i < os_kernel->PROC_COUNT; ++i)
@@ -515,9 +510,6 @@ int renew_proc_info(struct rtos  *rtos,
                     os_kernel_t  *os_kernel, 
                     os_process_t *os_processes)
 {
-    
-    LOG_DBG("scmRTOS> renew_proc_info \r\n");
-    
     scmRTOS_params_t *params = (scmRTOS_params_t *)rtos->rtos_specific_params;
 
     uint32_t proc_count = os_kernel->PROC_COUNT;
@@ -542,7 +534,7 @@ int renew_proc_info(struct rtos  *rtos,
         else
         {
             PrioMask <<= os_kernel->PROC_COUNT-1;
-            PrioMask >>= os_processes[i].Priority;
+            PrioMask >>= ( os_kernel->PROC_COUNT-1 - os_processes[i].Priority);
         }
 
         os_processes[i].Ready = os_kernel->ReadyProcessMap & PrioMask;
@@ -561,7 +553,6 @@ int renew_proc_info(struct rtos  *rtos,
                 rtos->current_thread = os_processes[i].Priority + 1;
                 info_str             = Active;
                 info_str_size        = sizeof(Active);
-                LOG_DBG("scmRTOS> I: current process index %d, addr 0x%x\r\n", i, ProcAddr);
             }
             else
             {
