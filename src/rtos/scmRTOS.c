@@ -98,8 +98,9 @@ typedef struct
     // general
     const char          *target_name;
     const unsigned char  pointer_size;
+    uint32_t             ProcessTable[MAX_PROC_COUNT];
     
-    // kernel
+    // kernel class members
     const unsigned char  CurProcPriority_offset;
     const unsigned char  CurProcPriority_size;
     const unsigned char  ReadyProcessMap_offset;
@@ -107,7 +108,7 @@ typedef struct
     const unsigned char  PROC_COUNT_offset;
     const unsigned char  PROC_COUNT_size;
     
-    // process
+    // process class members
     const unsigned char  StackPointer_offset;
     const unsigned char  StackPointer_size;
     const unsigned char  Timeout_offset;
@@ -127,7 +128,6 @@ typedef struct
     const uint32_t ProcessTableAddr;
     const uint32_t IdleProcAddr;
     bool           ReversePrioOrder;
-    uint32_t       ProcessTable[MAX_PROC_COUNT];
 }
 os_info_t;
 //------------------------------------------------------------------------------
@@ -148,9 +148,9 @@ typedef struct
 }
 os_process_t;
 //------------------------------------------------------------------------------
-static int get_kernel_data   (struct rtos *rtos, os_info_t *os_info, const scmRTOS_params_t *params, os_kernel_t *os_kernel);
-static int get_processes_data(struct rtos *rtos, os_info_t *os_info, os_kernel_t *os_kernel, const scmRTOS_params_t *params, os_process_t*os_processes);
-static int renew_proc_info   (struct rtos *rtos, os_info_t *os_info, os_kernel_t  *os_kernel, os_process_t *os_processes);
+static int get_kernel_data   (struct rtos *rtos, os_info_t *os_info, os_kernel_t *os_kernel);
+static int get_processes_data(struct rtos *rtos, os_info_t *os_info, os_kernel_t *os_kernel, os_process_t *os_processes);
+static int renew_proc_info   (struct rtos *rtos, os_info_t *os_info, os_kernel_t *os_kernel, os_process_t *os_processes);
 //------------------------------------------------------------------------------
 //
 //    Objects
@@ -174,11 +174,12 @@ static const symbols_t scmRTOS_symbols[] =
     { NULL,                        false }
 };
 //------------------------------------------------------------------------------
-static const scmRTOS_params_t scmRTOS_params[] = 
+static scmRTOS_params_t scmRTOS_params[] = 
 {
     {
         "cortex_m",                       
         TARGET_POINTER_SIZE,
+        { 0 },
         CUR_PROC_PRIORITY_OFFSET,
         CUR_PROC_PRIORITY_SIZE,
         READY_PROCESS_MAP_OFFSET,
@@ -194,8 +195,6 @@ static const scmRTOS_params_t scmRTOS_params[] =
         &rtos_standard_Cortex_M3_stacking 
     }
 };
-//------------------------------------------------------------------------------
-static uint32_t ProcessTable[MAX_PROC_COUNT];
 //------------------------------------------------------------------------------
 static const int TARGET_COUNT = sizeof(scmRTOS_params)/sizeof(scmRTOS_params[0]);
 static const int SYMBOL_COUNT = sizeof(scmRTOS_symbols)/sizeof(scmRTOS_symbols[0]);
@@ -244,8 +243,6 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
     if (rtos->rtos_specific_params == NULL)
         return -1;
 
-    const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
-
     //----------------------------------------------------------------
     //
     //    Check RTOS symbols
@@ -273,8 +270,7 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
         rtos->symbols[SID_KERNEL].address,
         rtos->symbols[SID_PROCESS_TABLE].address,
         rtos->symbols[SID_IDLE_PROC].address,
-        false,                                      // reverse prority order
-        { 0 }
+        false                                       // reverse prority order
     };
     
     //----------------------------------------------------------------
@@ -282,7 +278,7 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
     //    Get OS::Kernel data
     //
     os_kernel_t os_kernel;
-    int res = get_kernel_data(rtos, &os_info, params, &os_kernel);
+    int res = get_kernel_data(rtos, &os_info, &os_kernel);
     
     if (res != ERROR_OK) 
     {
@@ -300,7 +296,7 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
     //    Get RTOS processes data
     //
     os_process_t os_processes[MAX_PROC_COUNT];
-    res = get_processes_data(rtos, &os_info, &os_kernel, params, os_processes);
+    res = get_processes_data(rtos, &os_info, &os_kernel, os_processes);
     if (res != ERROR_OK) 
     {
         LOG_ERROR("scmRTOS> E: could not get processes data");
@@ -341,8 +337,9 @@ int scmRTOS_get_proc_reg_list(struct rtos *rtos, int64_t thread_id, char **hex_r
     const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
     
 
-    uint32_t sp_addr = ProcessTable[thread_id-1] + params->StackPointer_offset;
-    // Read the stack pointer
+    uint32_t sp_addr = params->ProcessTable[thread_id-1] + params->StackPointer_offset;
+
+    // Read the stack pointer value
     res = target_read_buffer(rtos->target, 
                              sp_addr,
                              params->pointer_size,
@@ -383,7 +380,6 @@ int scmRTOS_get_symbol_list_to_lookup(symbol_table_elem_t *symbol_list[])
 //------------------------------------------------------------------------------
 int get_kernel_data(struct rtos            *rtos, 
                     os_info_t              *os_info, 
-                    const scmRTOS_params_t *params, 
                     os_kernel_t            *os_kernel)
 {
 
@@ -392,6 +388,8 @@ int get_kernel_data(struct rtos            *rtos,
     uint32_t addr;
     uint32_t size;
     int      res;
+    
+    const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
     
     //  CurProcCount
     addr = os_info->KernelAddr + params->CurProcPriority_offset;
@@ -428,14 +426,14 @@ int get_kernel_data(struct rtos            *rtos,
     //  ProcessTable
     addr = os_info->ProcessTableAddr;
     size = (os_kernel->PROC_COUNT)*(params->pointer_size);
-    res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&os_info->ProcessTable);
+    res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&params->ProcessTable);
     if(res != ERROR_OK)
         return res;
     
 
     for(unsigned i = 0; i < os_kernel->PROC_COUNT; ++i)
     {
-        LOG_DEBUG("scmRTOS> I: ProcessTable[%d]: 0x%x\r\n", i, os_info->ProcessTable[i]);
+        LOG_DEBUG("scmRTOS> I: ProcessTable[%d]: 0x%x\r\n", i, params->ProcessTable[i]);
     }
     
     //  Check Reverse Priority Order
@@ -459,10 +457,12 @@ int get_kernel_data(struct rtos            *rtos,
 int get_processes_data(struct rtos            *rtos, 
                        os_info_t              *os_info,
                        os_kernel_t            *os_kernel, 
-                       const scmRTOS_params_t *params, 
                        os_process_t           *os_processes)
 {
     LOG_DBG("scmRTOS> get_processes_data \r\n");
+    
+    const scmRTOS_params_t *params = (const scmRTOS_params_t *)rtos->rtos_specific_params;
+    
     for(unsigned i = 0; i < os_kernel->PROC_COUNT; ++i)
     {
         uint32_t addr;
@@ -470,7 +470,7 @@ int get_processes_data(struct rtos            *rtos,
         uint32_t value;
         int res;
         
-        uint32_t ProcAddr = os_info->ProcessTable[i];
+        uint32_t ProcAddr = params->ProcessTable[i];
         
         //  Stack Pointer
         addr = ProcAddr + params->StackPointer_offset;
@@ -517,8 +517,12 @@ int renew_proc_info(struct rtos  *rtos,
 {
     
     LOG_DBG("scmRTOS> renew_proc_info \r\n");
+    
+    scmRTOS_params_t *params = (scmRTOS_params_t *)rtos->rtos_specific_params;
+
     uint32_t proc_count = os_kernel->PROC_COUNT;
     rtos->thread_details = malloc( sizeof(struct thread_detail)*proc_count );
+    
     if (!rtos->thread_details) 
     {
         LOG_ERROR("scmRTOS> E: allocating memory for %d processes", proc_count);
@@ -527,7 +531,7 @@ int renew_proc_info(struct rtos  *rtos,
     
     for(unsigned i = 0; i < os_kernel->PROC_COUNT; ++i)
     {
-        uint32_t ProcAddr = os_info->ProcessTable[i];
+        uint32_t ProcAddr = params->ProcessTable[i];
         
         // Ready-to-run
         uint32_t PrioMask = 0x00000001;
@@ -571,7 +575,7 @@ int renew_proc_info(struct rtos  *rtos,
             info_str_size = sizeof(Suspended);
         }
 
-        ProcessTable[os_processes[i].Priority] = ProcAddr;
+        params->ProcessTable[os_processes[i].Priority] = ProcAddr;
         
         rtos->thread_details[i].threadid        = os_processes[i].Priority + 1;
         rtos->thread_details[i].exists          = true;
