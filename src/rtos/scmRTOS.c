@@ -49,31 +49,36 @@ static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]
 //
 #define LOG_DBG LOG_OUTPUT // LOG_DEBUG
 
-#define TARGET_POINTER_SIZE 4
-#define MAX_PROC_COUNT      31
 //--------------------------------------------------------------------
 //
-//    OS::TKernel
+//    Literals
 //
-#define CUR_PROC_PRIORITY_OFFSET  0
-#define CUR_PROC_PRIORITY_SIZE    4
-#define READY_PROCESS_MAP_OFFSET  (CUR_PROC_PRIORITY_OFFSET + CUR_PROC_PRIORITY_SIZE)
-#define READY_PROCESS_MAP_SIZE    4
-#define ISR_NEST_COUNT_OFFSET     (READY_PROCESS_MAP_OFFSET + READY_PROCESS_MAP_SIZE)
-#define ISR_NEST_COUNT_SIZE       4
-#define PROC_COUNT_OFFSET         (ISR_NEST_COUNT_OFFSET + ISR_NEST_COUNT_SIZE)
-#define PROC_COUNT_SIZE           4
-//--------------------------------------------------------------------
-//
-//    OS::TBaseProcess
-//
-#define STACK_POINTER_OFFSET      0
-#define STACK_POINTER_SIZE        4
-#define TIMEOUT_OFFSET            (STACK_POINTER_OFFSET + STACK_POINTER_SIZE)
-#define TIMEOUT_SIZE              4
-#define PRIORITY_OFFSET           (TIMEOUT_OFFSET + TIMEOUT_SIZE)
-#define PRIORITY_SIZE             4
+enum
+{
+    TARGET_POINTER_SIZE = 4,
+    MAX_PROC_COUNT      = 31
+};
 
+enum    // 'cm' prefix means 'cortex-m'
+{
+    //  OS::TKernel members
+    cmCUR_PROC_PRIORITY_OFFSET = 0,
+    cmCUR_PROC_PRIORITY_SIZE   = 4,
+    cmREADY_PROCESS_MAP_OFFSET = cmCUR_PROC_PRIORITY_OFFSET + cmCUR_PROC_PRIORITY_SIZE,
+    cmREADY_PROCESS_MAP_SIZE   = 4,
+    cmISR_NEST_COUNT_OFFSET    = cmREADY_PROCESS_MAP_OFFSET + cmREADY_PROCESS_MAP_SIZE,
+    cmISR_NEST_COUNT_SIZE      = 4,
+    cmPROC_COUNT_OFFSET        = cmISR_NEST_COUNT_OFFSET + cmISR_NEST_COUNT_SIZE,
+    cmPROC_COUNT_SIZE          = 4,
+
+    //  OS::TBaseProcess members
+    cmSTACK_POINTER_OFFSET     = 0,
+    cmSTACK_POINTER_SIZE       = 4,
+    cmTIMEOUT_OFFSET           = cmSTACK_POINTER_OFFSET + cmSTACK_POINTER_SIZE,
+    cmTIMEOUT_SIZE             = 4,
+    cmPRIORITY_OFFSET          = cmTIMEOUT_OFFSET + cmTIMEOUT_SIZE,
+    cmPRIORITY_SIZE            = 4
+};
 //------------------------------------------------------------------------------
 //
 //    Types
@@ -180,18 +185,18 @@ static scmRTOS_params_t scmRTOS_params[] =
         "cortex_m",                       
         TARGET_POINTER_SIZE,
         { 0 },
-        CUR_PROC_PRIORITY_OFFSET,
-        CUR_PROC_PRIORITY_SIZE,
-        READY_PROCESS_MAP_OFFSET,
-        READY_PROCESS_MAP_SIZE,
-        PROC_COUNT_OFFSET,
-        PROC_COUNT_SIZE,
-        STACK_POINTER_OFFSET,
-        STACK_POINTER_SIZE,
-        TIMEOUT_OFFSET,
-        TIMEOUT_SIZE,
-        PRIORITY_OFFSET,
-        PRIORITY_SIZE,
+        cmCUR_PROC_PRIORITY_OFFSET,
+        cmCUR_PROC_PRIORITY_SIZE,
+        cmREADY_PROCESS_MAP_OFFSET,
+        cmREADY_PROCESS_MAP_SIZE,
+        cmPROC_COUNT_OFFSET,
+        cmPROC_COUNT_SIZE,
+        cmSTACK_POINTER_OFFSET,
+        cmSTACK_POINTER_SIZE,
+        cmTIMEOUT_OFFSET,
+        cmTIMEOUT_SIZE,
+        cmPRIORITY_OFFSET,
+        cmPRIORITY_SIZE,
         &rtos_standard_Cortex_M3_stacking 
     }
 };
