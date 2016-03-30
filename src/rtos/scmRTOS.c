@@ -197,8 +197,8 @@ static const scmRTOS_params_t scmRTOS_params[] =
 //------------------------------------------------------------------------------
 static uint32_t ProcessTable[MAX_PROC_COUNT];
 //------------------------------------------------------------------------------
-static const int TARGET_COUNT     = sizeof(scmRTOS_params)/sizeof(scmRTOS_params[0]);
-static const int SYMBOL_COUNT     = sizeof(scmRTOS_symbols)/sizeof(scmRTOS_symbols[0]);
+static const int TARGET_COUNT = sizeof(scmRTOS_params)/sizeof(scmRTOS_params[0]);
+static const int SYMBOL_COUNT = sizeof(scmRTOS_symbols)/sizeof(scmRTOS_symbols[0]);
 //------------------------------------------------------------------------------
 //
 //    Interface
@@ -215,7 +215,7 @@ int scmRTOS_detect_rtos(struct target *target)
     return 0;
 }
 //------------------------------------------------------------------------------
-int scmRTOS_create (struct target *target)
+int scmRTOS_create(struct target *target)
 {
     int i = 0;
     
@@ -234,7 +234,7 @@ int scmRTOS_create (struct target *target)
     return 0;
 }
 //------------------------------------------------------------------------------
-int scmRTOS_update_proc_info (struct rtos *rtos)
+int scmRTOS_update_proc_info(struct rtos *rtos)
 {
     LOG_DBG("scmRTOS> scmRTOS_update_proc_info \r\n");
     //----------------------------------------------------------------
@@ -323,7 +323,7 @@ int scmRTOS_update_proc_info (struct rtos *rtos)
     return ERROR_OK;
 }
 //------------------------------------------------------------------------------
-int scmRTOS_get_proc_reg_list (struct rtos *rtos, int64_t thread_id, char **hex_reg_list)
+int scmRTOS_get_proc_reg_list(struct rtos *rtos, int64_t thread_id, char **hex_reg_list)
 {
     int      res;
     uint32_t stack_ptr = 0;
@@ -358,7 +358,7 @@ int scmRTOS_get_proc_reg_list (struct rtos *rtos, int64_t thread_id, char **hex_
     
 }
 //------------------------------------------------------------------------------
-int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[])
+int scmRTOS_get_symbol_list_to_lookup(symbol_table_elem_t *symbol_list[])
 {
      *symbol_list = calloc( SYMBOL_COUNT, sizeof(symbol_table_elem_t) );
     if(!*symbol_list)
@@ -510,10 +510,10 @@ int get_processes_data(struct rtos            *rtos,
     return ERROR_OK;
 }
 //------------------------------------------------------------------------------
-int renew_proc_info(struct rtos   *rtos,
-                     os_info_t    *os_info,
-                     os_kernel_t  *os_kernel, 
-                     os_process_t *os_processes)
+int renew_proc_info(struct rtos  *rtos,
+                    os_info_t    *os_info,
+                    os_kernel_t  *os_kernel, 
+                    os_process_t *os_processes)
 {
     
     LOG_DBG("scmRTOS> renew_proc_info \r\n");
@@ -541,14 +541,7 @@ int renew_proc_info(struct rtos   *rtos,
             PrioMask >>= os_processes[i].Priority;
         }
 
-        if(os_kernel->ReadyProcessMap & PrioMask)
-        {
-            os_processes[i].Ready = true;
-        }
-        else
-        {
-            os_processes[i].Ready = false;
-        }
+        os_processes[i].Ready = os_kernel->ReadyProcessMap & PrioMask;
 
         char Active[]    = "Active";
         char Suspended[] = "Suspended";
