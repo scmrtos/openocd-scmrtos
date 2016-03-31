@@ -182,7 +182,25 @@ static const symbols_t scmRTOS_symbols[] =
 static scmRTOS_params_t scmRTOS_params[] = 
 {
     {
-        "cortex_m",                       
+        "cortex_m",                   // jlink                       
+        TARGET_POINTER_SIZE,
+        { 0 },
+        cmCUR_PROC_PRIORITY_OFFSET,
+        cmCUR_PROC_PRIORITY_SIZE,
+        cmREADY_PROCESS_MAP_OFFSET,
+        cmREADY_PROCESS_MAP_SIZE,
+        cmPROC_COUNT_OFFSET,
+        cmPROC_COUNT_SIZE,
+        cmSTACK_POINTER_OFFSET,
+        cmSTACK_POINTER_SIZE,
+        cmTIMEOUT_OFFSET,
+        cmTIMEOUT_SIZE,
+        cmPRIORITY_OFFSET,
+        cmPRIORITY_SIZE,
+        &rtos_standard_Cortex_M3_stacking 
+    },
+    {
+        "hla_target",                 // st-link      
         TARGET_POINTER_SIZE,
         { 0 },
         cmCUR_PROC_PRIORITY_OFFSET,
@@ -199,6 +217,7 @@ static scmRTOS_params_t scmRTOS_params[] =
         cmPRIORITY_SIZE,
         &rtos_standard_Cortex_M3_stacking 
     }
+    
 };
 //------------------------------------------------------------------------------
 static const int TARGET_COUNT = sizeof(scmRTOS_params)/sizeof(scmRTOS_params[0]);
@@ -223,10 +242,8 @@ int scmRTOS_create(struct target *target)
 {
     int i = 0;
     
-    while( (i < TARGET_COUNT) && (!strcmp(scmRTOS_params[i].target_name, target->type->name)) )
-    {
-        i++;
-    }
+    while( (i < TARGET_COUNT) && strcmp(scmRTOS_params[i].target_name, target->type->name) )
+        ++i;
 
     if(i >= TARGET_COUNT)
     {
