@@ -507,6 +507,8 @@
                 <F N="src/rtos/rtos_embkernel_stackings.h"/>
                 <F N="src/rtos/rtos_mqx_stackings.c"/>
                 <F N="src/rtos/rtos_mqx_stackings.h"/>
+                <F N="src/rtos/rtos_scmRTOS_stackings.c"/>
+                <F N="src/rtos/rtos_scmRTOS_stackings.h"/>
                 <F N="src/rtos/rtos_standard_stackings.c"/>
                 <F N="src/rtos/rtos_standard_stackings.h"/>
                 <F N="src/rtos/scmRTOS.c"/>

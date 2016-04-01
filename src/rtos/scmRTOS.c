@@ -34,7 +34,7 @@
 #include "helper/log.h"
 #include "helper/types.h"
 #include "rtos_standard_stackings.h"
-
+#include "rtos_scmRTOS_stackings.h"
           
 //------------------------------------------------------------------------------
 static int scmRTOS_detect_rtos               (struct target *target);
@@ -213,6 +213,21 @@ static scmRTOS_params_t scmRTOS_params[] =
         cmSTACK_POINTER_SIZE,
         cmTIMEOUT_OFFSET,
         &rtos_standard_Cortex_M3_stacking 
+    },
+    {
+        "arm7tdmi",                 
+        TARGET_POINTER_SIZE,
+        { 0 },
+        cmCUR_PROC_PRIORITY_OFFSET,
+        cmCUR_PROC_PRIORITY_SIZE,
+        cmREADY_PROCESS_MAP_OFFSET,
+        cmREADY_PROCESS_MAP_SIZE,
+        cmPROC_COUNT_OFFSET,
+        cmPROC_COUNT_SIZE,
+        cmSTACK_POINTER_OFFSET,
+        cmSTACK_POINTER_SIZE,
+        cmTIMEOUT_OFFSET,
+        &rtos_scmRTOS_arm7tdmi_stacking 
     }
 };
 //------------------------------------------------------------------------------
