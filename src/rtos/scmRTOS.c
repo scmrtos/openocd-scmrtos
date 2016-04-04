@@ -55,7 +55,8 @@ static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]
 enum
 {
     TARGET_POINTER_SIZE = 4,
-    MAX_PROCESS_COUNT   = 31
+    MAX_PROCESS_COUNT   = 31,
+    PROCESS_NAME_LEN    = 64
 };
 
 enum    // 'cm' prefix means 'cortex-m'
@@ -125,6 +126,7 @@ typedef struct
 {
     uint8_t PROCESS_COUNT;
     uint8_t TIMEOUT_SIZE;
+    uint8_t NAME_OFFSET;
 }
 os_debug_info_t;
 //------------------------------------------------------------------------------
@@ -136,6 +138,7 @@ typedef struct
     const uint32_t  IdleProcAddr;
     bool            ReversePrioOrder;
     os_debug_info_t DebugInfo;
+    uint32_t        MaxProcNameLen;
 }
 os_info_t;
 //------------------------------------------------------------------------------
@@ -152,6 +155,7 @@ typedef struct
     uint32_t Timeout;
     uint32_t Priority;
     bool     Ready;
+    char     Name[PROCESS_NAME_LEN];
 }
 os_process_t;
 //------------------------------------------------------------------------------
@@ -306,14 +310,15 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
         rtos->symbols[SID_PROCESS_TABLE].address,
         rtos->symbols[SID_IDLE_PROC].address,
         false,                                      // reverse prority order
-        { 0 }
+        { 0 },
+        0
     };
     
     
-    for(int i = 0; i < SYMBOL_COUNT; ++i) 
-    {
-        LOG_DBG("----->>> name: %s, value: 0x%lx\r\n", rtos->symbols[i].symbol_name, rtos->symbols[i].address);
-    }
+//  for(int i = 0; i < SYMBOL_COUNT; ++i)
+//  {
+//      LOG_DBG("----->>> name: %s, value: 0x%lx\r\n", rtos->symbols[i].symbol_name, rtos->symbols[i].address);
+//  }
     
     //----------------------------------------------------------------
     //
@@ -511,6 +516,11 @@ int get_processes_data(struct rtos  *rtos,
         uint32_t value;
         int      res;
         
+        if(i == 0)
+        {
+            os_info->MaxProcNameLen = 0;
+        }
+
         uint32_t ProcAddr = params->ProcessTable[i];
         
         const unsigned TIMEOUT_SIZE  = os_info->DebugInfo.TIMEOUT_SIZE;        
@@ -542,18 +552,48 @@ int get_processes_data(struct rtos  *rtos,
             return res;
         os_processes[i].Priority = value;
         
-        //LOG_DBG("--------> addr: 0x%x, size: %d, value: %d\r\n", addr, size, value);
+        // Name
+        addr  = ProcAddr + os_info->DebugInfo.NAME_OFFSET;
+        size  = params->pointer_size;
+        value = 0;
+        res  = target_read_buffer(rtos->target, addr, size, (uint8_t *)&value);
+        if(res != ERROR_OK)
+            return res;
         
+        if( (  os_info->ReversePrioOrder && os_processes[i].Priority == 0  ) ||             // IdleProc
+            ( !os_info->ReversePrioOrder && os_processes[i].Priority == PROCESS_COUNT-1) )
+        {
+            strcpy(os_processes[i].Name, "IdleProc");
+        }
+        else
+        {
+            addr = value;
+            size = PROCESS_NAME_LEN;
+            os_processes[i].Name[PROCESS_NAME_LEN-1] = '\0';
+            res  = target_read_buffer(rtos->target, addr, size, (uint8_t*)os_processes[i].Name);
+            if(res != ERROR_OK)
+                return res;
+        }
+                
+        //LOG_DBG(">>>>>> Proc %d, addr: 0x%x, Name addr : 0x%x, Name: %s\r\n", i, addr, value, os_processes[i].Name);
+        
+        uint32_t len = strlen(os_processes[i].Name);
+        if(len > os_info->MaxProcNameLen)
+        {
+            os_info->MaxProcNameLen = len;
+        }
+
         if(os_processes[i].Priority > MAX_PROCESS_COUNT)
         {
             LOG_ERROR("scmRTOS> E: invalid process priority value: %d", os_processes[i].Priority);
         }
 
-        LOG_DBG("scmRTOS> I: process index: %d at 0x%x > SP: 0x%x, Timeout: %d, Priority: %d\r\n", 
-                  i, ProcAddr, 
+        LOG_DBG("scmRTOS> I: proc addr: 0x%x > SP: 0x%x, Timeout: %d, Prio: %d, Name: %s\r\n", 
+                  ProcAddr, 
                   os_processes[i].StackPointer, 
                   os_processes[i].Timeout,
-                  os_processes[i].Priority);
+                  os_processes[i].Priority,
+                  os_processes[i].Name);
     }
     return ERROR_OK;
 }
@@ -635,15 +675,10 @@ int renew_proc_info(struct rtos  *rtos,
         sprintf(rtos->thread_details[i].display_str, "%s %d", "Prio", os_processes[i].Priority);
         strcpy(rtos->thread_details[i].extra_info_str, info_str);
 
-        if( (  os_info->ReversePrioOrder && os_processes[i].Priority == 0  ) ||
-            ( !os_info->ReversePrioOrder && os_processes[i].Priority == PROCESS_COUNT-1) )
-        {
-            strcpy(rtos->thread_details[i].thread_name_str, "IdleProc");
-        }
-        else 
-        {
-            strcpy(rtos->thread_details[i].thread_name_str, "NoName  ");
-        }
+        char buf[PROCESS_NAME_LEN];
+        int  pad_len = os_info->MaxProcNameLen - strlen(os_processes[i].Name);
+        sprintf( buf,"%s" "%*s", os_processes[i].Name, pad_len, "");
+        strcpy(rtos->thread_details[i].thread_name_str, buf);
     }
     return ERROR_OK;
 }
