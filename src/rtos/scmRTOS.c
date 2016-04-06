@@ -586,6 +586,7 @@ int get_processes_data(struct rtos  *rtos,
         if(os_processes[i].Priority > MAX_PROCESS_COUNT)
         {
             LOG_ERROR("scmRTOS> E: invalid process priority value: %d", os_processes[i].Priority);
+            return ERROR_WAIT;
         }
 
         LOG_DBG("scmRTOS> I: proc addr: 0x%x > SP: 0x%x, Timeout: %d, Prio: %d, Name: %s\r\n", 
