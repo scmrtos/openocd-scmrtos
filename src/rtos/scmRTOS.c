@@ -551,7 +551,7 @@ int get_processes_data(struct rtos  *rtos,
         if(res != ERROR_OK)
             return res;
         os_processes[i].Priority = value;
-        
+
         // Name
         addr  = ProcAddr + os_info->DebugInfo.NAME_OFFSET;
         size  = params->pointer_size;
@@ -574,8 +574,6 @@ int get_processes_data(struct rtos  *rtos,
             if(res != ERROR_OK)
                 return res;
         }
-                
-        //LOG_DBG(">>>>>> Proc %d, addr: 0x%x, Name addr : 0x%x, Name: %s\r\n", i, addr, value, os_processes[i].Name);
         
         uint32_t len = strlen(os_processes[i].Name);
         if(len > os_info->MaxProcNameLen)
