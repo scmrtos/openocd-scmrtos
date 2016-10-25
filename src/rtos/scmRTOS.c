@@ -315,9 +315,9 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
     };
     
     
-//  for(int i = 0; i < SYMBOL_COUNT; ++i)
+//  for(int i = 0; i < SYMBOL_COUNT - 1; ++i) // last symbol is null
 //  {
-//      LOG_DBG("----->>> name: %s, value: 0x%lx\r\n", rtos->symbols[i].symbol_name, rtos->symbols[i].address);
+//      LOG_OUTPUT("----->>> name: %s, value: 0x%lx\r\n", rtos->symbols[i].symbol_name, rtos->symbols[i].address);
 //  }
     
     //----------------------------------------------------------------
@@ -631,47 +631,31 @@ int renew_proc_info(struct rtos  *rtos,
 
         os_processes[i].Ready = os_kernel->ReadyProcessMap & PrioMask;
 
-        char Active[]    = "Active";
-        char Suspended[] = "Suspended";
-        char Preempted[] = "Preempted";
-
-        char *info_str     = NULL;
-        int  info_str_size = 0;
+        char *info_str     = "Preempted";
 
         if(os_processes[i].Ready)
         {
             if( os_kernel->CurProcPriority == os_processes[i].Priority )
             {
                 rtos->current_thread = os_processes[i].Priority + 1;
-                info_str             = Active;
-                info_str_size        = sizeof(Active);
+                info_str             = "Active";
             }
             else
-            {
-                info_str      = Preempted;
-                info_str_size = sizeof(Preempted);
-            }
-        }
-        else
-        {
-            info_str      = Suspended;
-            info_str_size = sizeof(Suspended);
+                info_str      = "Suspended";
         }
 
         params->ProcessTable[os_processes[i].Priority] = ProcAddr;
         
         rtos->thread_details[i].threadid        = os_processes[i].Priority + 1;
         rtos->thread_details[i].exists          = true;
-        rtos->thread_details[i].display_str     = malloc(16);;
-        rtos->thread_details[i].thread_name_str = malloc(16); //NULL;
-        rtos->thread_details[i].extra_info_str  = malloc(info_str_size);
+        rtos->thread_details[i].thread_name_str = malloc(16);
+        rtos->thread_details[i].extra_info_str  = malloc(strlen(info_str));
         if (!rtos->thread_details[i].extra_info_str) 
         {
             LOG_ERROR("scmRTOS> E: allocating memory for process extra info string");
             return ERROR_FAIL;
         }
 
-        sprintf(rtos->thread_details[i].display_str, "%s %d", "Prio", os_processes[i].Priority);
         strcpy(rtos->thread_details[i].extra_info_str, info_str);
 
         char buf[PROCESS_NAME_LEN];
