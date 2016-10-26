@@ -613,6 +613,14 @@ int renew_proc_info(struct rtos  *rtos,
         return ERROR_FAIL;
     }
     
+    size_t Proc_name_max_len = 0;    
+    for(unsigned i = 0; i < PROCESS_COUNT; ++i)
+    {
+        size_t Cur_proc_name_len = strlen(os_processes[i].Name);
+        if(Cur_proc_name_len > Proc_name_max_len)
+            Proc_name_max_len = Cur_proc_name_len;
+    }
+    
     for(unsigned i = 0; i < PROCESS_COUNT; ++i)
     {
         uint32_t ProcAddr = params->ProcessTable[i];
@@ -648,20 +656,16 @@ int renew_proc_info(struct rtos  *rtos,
         
         rtos->thread_details[i].threadid        = os_processes[i].Priority + 1;
         rtos->thread_details[i].exists          = true;
-        rtos->thread_details[i].thread_name_str = malloc(16);
-        rtos->thread_details[i].extra_info_str  = malloc(strlen(info_str));
-        if (!rtos->thread_details[i].extra_info_str) 
+        rtos->thread_details[i].thread_name_str = malloc(Proc_name_max_len + 1);    // +1 = trailing '\0'
+        rtos->thread_details[i].extra_info_str  = malloc(strlen(info_str) + 1);
+        if (!rtos->thread_details[i].thread_name_str || !rtos->thread_details[i].extra_info_str) 
         {
-            LOG_ERROR("scmRTOS> E: allocating memory for process extra info string");
+            LOG_ERROR("scmRTOS> E: allocating memory for process name or extra info string");
             return ERROR_FAIL;
         }
 
         strcpy(rtos->thread_details[i].extra_info_str, info_str);
-
-        char buf[PROCESS_NAME_LEN];
-        int  pad_len = os_info->MaxProcNameLen - strlen(os_processes[i].Name);
-        sprintf( buf,"%s" "%*s", os_processes[i].Name, pad_len, "");
-        strcpy(rtos->thread_details[i].thread_name_str, buf);
+        snprintf(rtos->thread_details[i].thread_name_str, Proc_name_max_len + 1, "%-*s", (int)Proc_name_max_len, os_processes[i].Name);
     }
     return ERROR_OK;
 }
