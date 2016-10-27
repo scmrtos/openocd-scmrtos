@@ -621,7 +621,7 @@ int renew_proc_info(struct rtos  *rtos,
             Proc_name_max_len = Cur_proc_name_len;
     }
     
-    if(Proc_name_max_len > PROCESS_NAME_LEN)
+    if(Proc_name_max_len > PROCESS_NAME_LEN - 1)
         Proc_name_max_len = PROCESS_NAME_LEN - 1;
         
     for(unsigned i = 0; i < PROCESS_COUNT; ++i)
