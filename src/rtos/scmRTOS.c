@@ -560,12 +560,7 @@ int get_processes_data(struct rtos  *rtos,
         if(res != ERROR_OK)
             return res;
         
-        if( (  os_info->ReversePrioOrder && os_processes[i].Priority == 0  ) ||             // IdleProc
-            ( !os_info->ReversePrioOrder && os_processes[i].Priority == PROCESS_COUNT-1) )
-        {
-            strcpy(os_processes[i].Name, "IdleProc");
-        }
-        else
+        if(value != 0)  // process name exist
         {
             addr = value;
             size = PROCESS_NAME_LEN;
@@ -574,7 +569,9 @@ int get_processes_data(struct rtos  *rtos,
             if(res != ERROR_OK)
                 return res;
         }
-        
+        else
+            strcpy(os_processes[i].Name, "-----");
+
         uint32_t len = strlen(os_processes[i].Name);
         if(len > os_info->MaxProcNameLen)
         {
