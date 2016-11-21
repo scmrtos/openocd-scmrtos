@@ -159,36 +159,6 @@ else
 fi
 AC_MSG_RESULT([$build_release])
 
-AC_ARG_WITH(ftd2xx,
-   AS_HELP_STRING([--with-ftd2xx=<PATH>],[This option has been removed.]),
-  [
-# Option Given.
-cat << __EOF__
-
-The option: --with-ftd2xx=<PATH> has been removed.
-On Linux, the new option is:
-
-  --with-ftd2xx-linux-tardir=/path/to/files
-
-Where <path> is the path the the directory where the "tar.gz" file
-from FTDICHIP.COM was unpacked, for example:
-
-  --with-ftd2xx-linux-tardir=${HOME}/libftd2xx0.4.16
-
-On Cygwin/MingW32, the new option is:
-
-  --with-ftd2xx-win32-zipdir=/path/to/files
-
-Where <path> is the path to the directory where the "zip" file from
-FTDICHIP.COM was unpacked, for example:
-
-  --with-ftd2xx-win32-zipdir=${HOME}/ftd2xx.cdm.files
-
-__EOF__
-
-   AC_MSG_ERROR([Sorry Cannot continue])
-  ], [true])
-
 # Adapter drivers
 # 1st column -- configure option
 # 2nd column -- description
@@ -201,7 +171,6 @@ m4_define([ADAPTER_OPT], [m4_translit(ADAPTER_ARG($1), [_], [-])])
 
 m4_define([USB1_ADAPTERS],
 	[[[ftdi], [MPSSE mode of FTDI based devices], [FTDI]],
-	[[jlink], [Segger J-Link JTAG Programmer], [JLINK]],
 	[[stlink], [ST-Link JTAG Programmer], [HLADAPTER_STLINK]],
 	[[ti_icdi], [TI ICDI JTAG Programmer], [HLADAPTER_ICDI]],
 	[[ulink], [Keil ULINK JTAG Programmer], [ULINK]],
@@ -221,63 +190,9 @@ m4_define([USB0_ADAPTERS],
 m4_define([HIDAPI_ADAPTERS],
 	[[[cmsis_dap], [CMSIS-DAP Compliant Debugger], [CMSIS_DAP]]])
 
-#========================================
-# FTD2XXX support comes in 4 forms.
-#    (1) win32 - via a zip file
-#    (2) linux - via a tar file
-#    (3) linux/cygwin/mingw - via libftdi
-#    (4) darwin - installed under /usr/local
-#
-# In case (1) and (2) we need to know where the package was unpacked.
+m4_define([LIBJAYLINK_ADAPTERS],
+	[[[jlink], [SEGGER J-Link Programmer], [JLINK]]])
 
-AC_ARG_WITH(ftd2xx-win32-zipdir,
-  AS_HELP_STRING([--with-ftd2xx-win32-zipdir],[Where (CYGWIN/MINGW) the zip file from ftdichip.com was unpacked (default=search)]),
-  [
-  # option present
-  if test -d $with_ftd2xx_win32_zipdir
-  then
-    with_ftd2xx_win32_zipdir=`cd $with_ftd2xx_win32_zipdir && pwd`
-    AC_MSG_NOTICE([Using: ftdichip.com library: $with_ftd2xx_win32_zipdir])
-  else
-    AC_MSG_ERROR([Parameter to --with-ftd2xx-win32-zipdir is not a dir: $with_ftd2xx_win32_zipdir])
-  fi
-  ], [true])
-
-AC_ARG_WITH(ftd2xx-linux-tardir,
-  AS_HELP_STRING([--with-ftd2xx-linux-tardir], [Where (Linux/Unix) the tar file from ftdichip.com was unpacked (default=search)]),
-  [
-  # Option present
-  if test $is_win32 = yes ; then
-     AC_MSG_ERROR([The option: --with-ftd2xx-linux-tardir is only usable on linux])
-  fi
-  if test -d $with_ftd2xx_linux_tardir
-  then
-    with_ftd2xx_linux_tardir=`cd $with_ftd2xx_linux_tardir && pwd`
-    AC_MSG_NOTICE([Using: ftdichip.com library: $with_ftd2xx_linux_tardir])
-  else
-    AC_MSG_ERROR([Parameter to --with-ftd2xx-linux-tardir is not a dir: $with_ftd2xx_linux_tardir])
-  fi
-  ], [true])
-
-AC_ARG_WITH(ftd2xx-lib,
-  AS_HELP_STRING([--with-ftd2xx-lib],
-    [Use static or shared ftd2xx libs (default=static)]),
-  [
-  case "$withval" in
-  static)
-    with_ftd2xx_lib=$withval
-    ;;
-  shared)
-    with_ftd2xx_lib=$withval
-    ;;
-  *)
-    AC_MSG_ERROR([Option: --with-ftd2xx-lib=static or --with-ftd2xx-lib=shared not, $withval])
-    ;;
-  esac
-  ], [
-  # Default is static - it is simpler :-(
-  with_ftd2xx_lib=static
-  ])
 
 AC_ARG_ENABLE([doxygen-html],
   AS_HELP_STRING([--disable-doxygen-html],
@@ -379,7 +294,7 @@ m4_define([AC_ARG_ADAPTERS], [
   ])
 ])
 
-AC_ARG_ADAPTERS([USB1_ADAPTERS, USB_ADAPTERS, USB0_ADAPTERS, HIDAPI_ADAPTERS], [auto])
+AC_ARG_ADAPTERS([USB1_ADAPTERS, USB_ADAPTERS, USB0_ADAPTERS, HIDAPI_ADAPTERS, LIBJAYLINK_ADAPTERS], [auto])
 
 AC_ARG_ENABLE([parport],
   AS_HELP_STRING([--enable-parport], [Enable building the pc parallel port driver]),
@@ -395,37 +310,13 @@ AC_ARG_ENABLE([parport_giveio],
       [Enable use of giveio for parport (for CygWin only)]),
     [parport_use_giveio=$enableval], [parport_use_giveio=])
 
-AC_ARG_ENABLE([ft2232_libftdi], [], [
-if test $enableval = yes; then
-  AC_MSG_ERROR([The ft2232 driver is deprecated, use --enable-ftdi to build its replacement, or force the old driver with --enable-legacy-ft2232_libftdi])
-fi
-])
-
-AC_ARG_ENABLE([ft2232_ftd2xx], [], [
-if test $enableval = yes; then
-  AC_MSG_ERROR([The ft2232 driver is deprecated, use --enable-ftdi to build its replacement, or force the old driver with --enable-legacy-ft2232_ftd2xx])
-fi
-])
-
-AC_ARG_ENABLE([legacy-ft2232_libftdi],
-  AS_HELP_STRING([--enable-legacy-ft2232_libftdi], [(DEPRECATED) Enable building support for FT2232 based devices using the libftdi library]),
-  [build_ft2232_libftdi=$enableval], [build_ft2232_libftdi=no])
-
-AC_ARG_ENABLE([legacy-ft2232_ftd2xx],
-  AS_HELP_STRING([--enable-legacy-ft2232_ftd2xx], [(DEPRECATED) Enable building support for FT2232 based devices using the D2XX library from ftdichip.com]),
-  [build_ft2232_ftd2xx=$enableval], [build_ft2232_ftd2xx=no])
-
 AC_ARG_ENABLE([jtag_vpi],
   AS_HELP_STRING([--enable-jtag_vpi], [Enable building support for JTAG VPI]),
   [build_jtag_vpi=$enableval], [build_jtag_vpi=no])
 
 AC_ARG_ENABLE([usb_blaster_libftdi],
-  AS_HELP_STRING([--enable-usb_blaster_libftdi], [Enable building support for the Altera USB-Blaster using the libftdi driver, opensource alternate of FTD2XX]),
-  [build_usb_blaster_libftdi=$enableval], [build_usb_blaster_libftdi=no])
-
-AC_ARG_ENABLE([usb_blaster_ftd2xx],
-  AS_HELP_STRING([--enable-usb_blaster_ftd2xx], [Enable building support for the Altera USB-Blaster using the FTD2XX driver from ftdichip.com]),
-  [build_usb_blaster_ftd2xx=$enableval], [build_usb_blaster_ftd2xx=no])
+  AS_HELP_STRING([--enable-usb_blaster_libftdi], [Enable building support for the Altera USB-Blaster using the libftdi driver]),
+  [build_usb_blaster=$enableval], [build_usb_blaster=no])
 
 AC_ARG_ENABLE([amtjtagaccel],
   AS_HELP_STRING([--enable-amtjtagaccel], [Enable building the Amontec JTAG-Accelerator driver]),
@@ -470,20 +361,12 @@ AC_ARG_ENABLE([gw16012],
   [build_gw16012=$enableval], [build_gw16012=no])
 
 AC_ARG_ENABLE([presto_libftdi],
-  AS_HELP_STRING([--enable-presto_libftdi], [Enable building support for ASIX Presto Programmer using the libftdi driver]),
-  [build_presto_libftdi=$enableval], [build_presto_libftdi=no])
-
-AC_ARG_ENABLE([presto_ftd2xx],
-  AS_HELP_STRING([--enable-presto_ftd2xx], [Enable building support for ASIX Presto Programmer using the FTD2XX driver]),
-  [build_presto_ftd2xx=$enableval], [build_presto_ftd2xx=no])
-
-AC_ARG_ENABLE([openjtag_ftd2xx],
-  AS_HELP_STRING([--enable-openjtag_ftd2xx], [Enable building support for the OpenJTAG Programmer with ftd2xx driver]),
-  [build_openjtag_ftd2xx=$enableval], [build_openjtag_ftd2xx=no])
+  AS_HELP_STRING([--enable-presto_libftdi], [Enable building support for ASIX Presto Programmer using the libftdi library]),
+  [build_presto=$enableval], [build_presto=no])
 
 AC_ARG_ENABLE([openjtag_ftdi],
-  AS_HELP_STRING([--enable-openjtag_ftdi], [Enable building support for the OpenJTAG Programmer with ftdi driver]),
-  [build_openjtag_ftdi=$enableval], [build_openjtag_ftdi=no])
+  AS_HELP_STRING([--enable-openjtag_ftdi], [Enable building support for the OpenJTAG Programmer with libftdi library]),
+  [build_openjtag=$enableval], [build_openjtag=no])
 
 AC_ARG_ENABLE([oocd_trace],
   AS_HELP_STRING([--enable-oocd_trace],
@@ -697,34 +580,16 @@ else
   AC_DEFINE([BUILD_BITBANG], [0], [0 if you don't want a bitbang interface.])
 fi
 
-if test $build_ft2232_libftdi = yes; then
-  AC_DEFINE([BUILD_FT2232_LIBFTDI], [1], [1 if you want libftdi ft2232.])
+if test $build_usb_blaster = yes; then
+  AC_DEFINE([BUILD_USB_BLASTER], [1], [1 if you want libftdi usb_blaster.])
 else
-  AC_DEFINE([BUILD_FT2232_LIBFTDI], [0], [0 if you don't want libftdi ft2232.])
-fi
-
-if test $build_ft2232_ftd2xx = yes; then
-  AC_DEFINE([BUILD_FT2232_FTD2XX], [1], [1 if you want ftd2xx ft2232.])
-else
-  AC_DEFINE([BUILD_FT2232_FTD2XX], [0], [0 if you don't want ftd2xx ft2232.])
-fi
-
-if test $build_usb_blaster_libftdi = yes; then
-  AC_DEFINE([BUILD_USB_BLASTER_LIBFTDI], [1], [1 if you want libftdi usb_blaster.])
-else
-  AC_DEFINE([BUILD_USB_BLASTER_LIBFTDI], [0], [0 if you don't want libftdi usb_blaster.])
+  AC_DEFINE([BUILD_USB_BLASTER], [0], [0 if you don't want libftdi usb_blaster.])
 fi
 
 if test $build_jtag_vpi = yes; then
   AC_DEFINE([BUILD_JTAG_VPI], [1], [1 if you want JTAG VPI.])
 else
   AC_DEFINE([BUILD_JTAG_VPI], [0], [0 if you don't want JTAG VPI.])
-fi
-
-if test $build_usb_blaster_ftd2xx = yes; then
-  AC_DEFINE([BUILD_USB_BLASTER_FTD2XX], [1], [1 if you want ftd2xx usb_blaster.])
-else
-  AC_DEFINE([BUILD_USB_BLASTER_FTD2XX], [0], [0 if you don't want ftd2xx usb_blaster.])
 fi
 
 if test $build_amtjtagaccel = yes; then
@@ -739,18 +604,11 @@ else
   AC_DEFINE([BUILD_GW16012], [0], [0 if you don't want the Gateworks GW16012 driver.])
 fi
 
-if test $build_presto_libftdi = yes; then
+if test $build_presto = yes; then
   build_bitq=yes
-  AC_DEFINE([BUILD_PRESTO_LIBFTDI], [1], [1 if you want the ASIX PRESTO driver using libftdi.])
+  AC_DEFINE([BUILD_PRESTO], [1], [1 if you want the ASIX PRESTO driver using libftdi.])
 else
-  AC_DEFINE([BUILD_PRESTO_LIBFTDI], [0], [0 if you don't want the ASIX PRESTO driver using libftdi.])
-fi
-
-if test $build_presto_ftd2xx = yes; then
-  build_bitq=yes
-  AC_DEFINE([BUILD_PRESTO_FTD2XX], [1], [1 if you want the ASIX PRESTO driver using FTD2XX.])
-else
-  AC_DEFINE([BUILD_PRESTO_FTD2XX], [0], [0 if you don't want the ASIX PRESTO driver using FTD2XX.])
+  AC_DEFINE([BUILD_PRESTO], [0], [0 if you don't want the ASIX PRESTO driver using libftdi.])
 fi
 
 if test $build_bitq = yes; then
@@ -759,17 +617,11 @@ else
   AC_DEFINE([BUILD_BITQ], [0], [0 if you don't want a bitq interface.])
 fi
 
-AC_DEFINE([BUILD_OPENJTAG], [0], [0 if you don't want the OpenJTAG driver.])
-AC_DEFINE([BUILD_OPENJTAG_FTD2XX], [0], [0 if you don't want the OpenJTAG driver with FTD2XX driver.])
-AC_DEFINE([BUILD_OPENJTAG_LIBFTDI], [0], [0 if you don't want to build OpenJTAG driver with libftdi.])
 
-if test $build_openjtag_ftd2xx = yes; then
+if test $build_openjtag = yes; then
   AC_DEFINE([BUILD_OPENJTAG], [1], [1 if you want the OpenJTAG driver.])
-  AC_DEFINE([BUILD_OPENJTAG_FTD2XX], [1], [1 if you want the OpenJTAG driver with FTD2XX driver.])
-fi
-if test $build_openjtag_ftdi = yes; then
-  AC_DEFINE([BUILD_OPENJTAG], [1], [1 if you want the OpenJTAG drvier.])
-  AC_DEFINE([BUILD_OPENJTAG_LIBFTDI], [1], [1 if you want to build OpenJTAG with FTDI driver.])
+else
+  AC_DEFINE([BUILD_OPENJTAG], [0], [0 if you don't want the OpenJTAG driver.])
 fi
 
 if test $build_oocd_trace = yes; then
@@ -792,19 +644,6 @@ if test $use_internal_jimtcl = yes; then
   fi
 fi
 
-if test $use_internal_libjaylink = yes; then
-  if test -f "$srcdir/src/jtag/drivers/libjaylink/configure.ac"; then
-    ( cd $srcdir/src/jtag/drivers/libjaylink/ && ./autogen.sh )
-    AX_CONFIG_SUBDIR_OPTION([src/jtag/drivers/libjaylink],
-		[--enable-subproject-build])
-  else
-    AC_MSG_ERROR([Internal libjaylink not found, run either 'git submodule init' and 'git submodule update' or disable internal libjaylink with --disable-internal-libjaylink.])
-  fi
-else
-  PKG_CHECK_MODULES([libjaylink], [libjaylink >= 0.1],
-	[CFLAGS="$CFLAGS $libjaylink_CFLAGS"; LIBS="$LIBS $libjaylink_LIBS"; HAVE_LIBJAYLINK=yes], [HAVE_LIBJAYLINK=no])
-fi
-
 if test $build_remote_bitbang = yes; then
   build_bitbang=yes
   AC_DEFINE([BUILD_REMOTE_BITBANG], [1], [1 if you want the Remote Bitbang JTAG driver.])
@@ -818,233 +657,8 @@ if test $build_sysfsgpio = yes; then
 else
   AC_DEFINE([BUILD_SYSFSGPIO], [0], [0 if you don't want SysfsGPIO driver.])
 fi
-#-- Deal with MingW/Cygwin FTD2XX issues
 
-if test $is_win32 = yes; then
-if test "${with_ftd2xx_linux_tardir+set}" = set
-then
-  AC_MSG_ERROR([The option: with_ftd2xx_linux_tardir is for LINUX only.])
-fi
-
-if test $build_ft2232_ftd2xx = yes -o $build_presto_ftd2xx = yes -o $build_usb_blaster_ftd2xx = yes -o $build_openjtag_ftd2xx = yes; then
-  AC_MSG_CHECKING([for ftd2xx.lib exists (win32)])
-
-  # if we are given a zipdir...
-  if test "${with_ftd2xx_win32_zipdir+set}" = set
-  then
-    # Set the CFLAGS for "ftd2xx.h"
-    f=$with_ftd2xx_win32_zipdir/ftd2xx.h
-    if test ! -f $f ; then
-      AC_MSG_ERROR([File: $f cannot be found])
-    fi
-    CFLAGS="$CFLAGS -I$with_ftd2xx_win32_zipdir"
-
-    # And calculate the LDFLAGS for the machine
-    case "$host_cpu" in
-    i?86|x86_32)
-      LDFLAGS="$LDFLAGS -L$with_ftd2xx_win32_zipdir/i386"
-      LIBS="$LIBS -lftd2xx"
-      f=$with_ftd2xx_win32_zipdir/i386/ftd2xx.lib
-      ;;
-    amd64|x86_64)
-      LDFLAGS="$LDFLAGS -L$with_ftd2xx_win32_zipdir/amd64"
-      LIBS="$LIBS -lftd2xx"
-      f=$with_ftd2xx_win32_zipdir/amd64/ftd2xx.lib
-      ;;
-    *)
-      AC_MSG_ERROR([Unknown Win32 host cpu: $host_cpu])
-      ;;
-    esac
-    if test ! -f $f ; then
-         AC_MSG_ERROR([Library: $f not found])
-    fi
-  else
-    LIBS="$LIBS -lftd2xx"
-    AC_MSG_WARN([ASSUMPTION: The (win32) FTDICHIP.COM files: ftd2xx.h and ftd2xx.lib are in a proper place])
-  fi
-fi
-fi # win32
-
-if test $is_darwin = yes ; then
-if test "${with_ftd2xx_win32_zipdir+set}" = set
-then
-   AC_MSG_ERROR([The option: --with-ftd2xx-win32-zipdir is for win32 only])
-fi
-if test "${with_ftd2xx_linux_tardir+set}" = set
-then
-   AC_MSG_ERROR([The option: with_ftd2xx_linux_tardir is for LINUX only.])
-fi
-
-if test $build_ft2232_ftd2xx = yes -o $build_presto_ftd2xx = yes -o $build_usb_blaster_ftd2xx = yes ; then
-   AC_MSG_CHECKING([for libftd2xx.a (darwin)])
-
-   if test ! -f /usr/local/include/ftd2xx.h ; then
-      AC_MSG_ERROR([ftd2xx library from FTDICHIP.com seems to be missing, cannot find: /usr/local/include/ftd2xx.h])
-   fi
-
-   CFLAGS="$CFLAGS -I/usr/local/include"
-   LDFLAGS="$LDFLAGS -L/usr/local/lib"
-   LIBS="$LIBS -lftd2xx"
-   AC_MSG_RESULT([-L/usr/local/lib -lftd2xx])
-fi
-fi # darwin
-
-if test $is_win32 = no && test $is_darwin = no ; then
-
-if test "${with_ftd2xx_win32_zipdir+set}" = set
-then
-   AC_MSG_ERROR([The option: --with-ftd2xx-win32-zipdir is for win32 only])
-fi
-
-if test $build_ft2232_ftd2xx = yes -o $build_presto_ftd2xx = yes -o $build_usb_blaster_ftd2xx = yes -o $build_openjtag_ftd2xx = yes; then
-   # Must be linux
-   if test $host_os != linux-gnu && test $host_os != linux ; then
-      AC_MSG_ERROR([The (linux) ftd2xx library from FTDICHIP.com is linux only. Try --enable-ft2232-libftdi instead])
-  fi
-  # Are we given a TAR directory?
-  if test "${with_ftd2xx_linux_tardir+set}" = set
-  then
-    AC_MSG_CHECKING([uninstalled ftd2xx distribution])
-    # The .H file is simple..
-    FTD2XX_H=$with_ftd2xx_linux_tardir/ftd2xx.h
-    if test ! -f "${FTD2XX_H}"; then
-    AC_MSG_ERROR([Option: --with-ftd2xx-linux-tardir appears wrong, cannot find: ${FTD2XX_H}])
-    fi
-    CFLAGS="$CFLAGS -I$with_ftd2xx_linux_tardir"
-    if test $with_ftd2xx_lib = shared; then
-       FTD2XX_LDFLAGS="-L$with_ftd2xx_linux_tardir"
-       FTD2XX_LIB="-lftd2xx"
-    else
-      # Test #1 - v1.0.x
-      case "$host_cpu" in
-      i?86|x86_32)
-              dir=build/i386;;
-      amd64|x86_64)
-              dir=build/x86_64;;
-      *)
-              dir=none;;
-      esac
-      if test -f "$with_ftd2xx_linux_tardir/$dir/libftd2xx.a"; then
-          FTD2XX_LDFLAGS="-L$with_ftd2xx_linux_tardir/$dir"
-          # Also needs -lrt
-          FTD2XX_LIB="-lftd2xx -lrt"
-      else
-        # Test Number2.
-        # Grr.. perhaps it exists as a version number?
-        FTD2XX_LIB="$with_ftd2xx_linux_tardir/static_lib/libftd2xx.a.*.*.*"
-        count=`ls ${FTD2XX_LIB} | wc -l`
-        if test $count -gt 1 ; then
-          AC_MSG_ERROR([Multiple libftd2xx.a files found in: $with_ftd2xx_linux_tardir/static_lib sorry cannot handle this yet])
-        fi
-        if test $count -ne 1 ; then
-          AC_MSG_ERROR([Not found: $f, option: --with-ftd2xx-linux-tardir appears to be wrong])
-        fi
-        # Because the "-l" rules do not understand version numbers...
-        # we will just stuff the absolute path onto the LIBS variable
-        FTD2XX_LIB="`ls ${FTD2XX_LIB}` -lpthread"
-        FTD2XX_LDFLAGS=""
-      fi
-    fi
-    LDFLAGS="${LDFLAGS} ${FTD2XX_LDFLAGS}"
-    LIBS="${FTD2XX_LIB} ${LIBS}"
-    AC_MSG_RESULT([${FTD2XX_LDFLAGS} ${FTD2XX_LIB}])
-  else
-    AC_CHECK_HEADER([ftd2xx.h],[],[
-        AC_MSG_ERROR([You seem to be missing the FTD2xx driver header file.])
-      ])
-    AC_SEARCH_LIBS([FT_GetLibraryVersion],[ftd2xx],,[
-        AC_MSG_ERROR([You appear to be missing the FTD2xx driver library.])
-      ],[-lrt -lusb-1.0])
-  fi
-fi
-fi # linux
-
-if test $build_ft2232_ftd2xx = yes -o $build_presto_ftd2xx = yes -o $build_usb_blaster_ftd2xx = yes ; then
-
-# Before we go any further - make sure we can *BUILD* and *RUN*
-# a simple app with the "ftd2xx.lib" file - in what ever form we where given
-# We should be able to compile, link and run this test program now
-AC_MSG_CHECKING([whether ftd2xx library works])
-
-#
-# Save the LDFLAGS for later..
-LDFLAGS_SAVE=$LDFLAGS
-CFLAGS_SAVE=$CFLAGS
-_LDFLAGS=`eval echo $LDFLAGS`
-_CFLAGS=`eval echo $CFLAGS`
-LDFLAGS=$_LDFLAGS
-CFLAGS=$_CFLAGS
-
-AC_RUN_IFELSE([AC_LANG_PROGRAM([[
-#include "confdefs.h"
-#if IS_WIN32
-#include "windows.h"
-#endif
-#include <stdio.h>
-#include <ftd2xx.h>
-  ]], [[
-  DWORD x;
-  FT_GetLibraryVersion( &x );
-  ]])], [
-    AC_MSG_RESULT([Success!])
-  ], [
-    AC_MSG_ERROR([Cannot build & run test program using ftd2xx.lib])
-  ], [
-    AC_MSG_RESULT([Skipping as we are cross-compiling])
-  ])
-
-AC_MSG_CHECKING([for ftd2xx highspeed device support])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
-#include "confdefs.h"
-#if IS_WIN32
-#include "windows.h"
-#endif
-#include <stdio.h>
-#include <ftd2xx.h>
-
-DWORD x = FT_DEVICE_4232H;
-    ]], [])], [
-      AC_DEFINE([BUILD_FT2232_HIGHSPEED], [1],
-        [Support FT2232H/FT4232HS with FTD2XX or libftdi.])
-      build_ft2232_highspeed=yes
-    ], [
-      build_ft2232_highspeed=no
-    ])
-  AC_MSG_RESULT([$build_ft2232_highspeed])
-
-  if test $build_ft2232_highspeed = no; then
-    AC_MSG_WARN([You need a newer FTD2XX driver (version 2.04.16 or later).])
-  fi
-
-AC_MSG_CHECKING([for ftd2xx FT232H device support])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
-#include "confdefs.h"
-#if IS_WIN32
-#include "windows.h"
-#endif
-#include <stdio.h>
-#include <ftd2xx.h>
-
-DWORD x = FT_DEVICE_232H;
-    ]], [])], [
-      AC_DEFINE([HAS_ENUM_FT232H], [1],
-        [Support FT232H with FTD2XX or libftdi.])
-      has_enum_ft232h=yes
-    ], [
-      has_enum_ft232h=no
-    ])
-  AC_MSG_RESULT([$has_enum_ft232h])
-
-  if test $has_enum_ft232h = no; then
-    AC_MSG_WARN([You need a newer FTD2XX driver (version 2.08.12 or later).])
-  fi
-
-LDFLAGS=$LDFLAGS_SAVE
-CFLAGS=$CFLAGS_SAVE
-fi
-
-if test $build_ft2232_libftdi = yes -o $build_usb_blaster_libftdi = yes -o \
-  $build_openjtag_ftdi = yes -o $build_presto_libftdi = yes; then
+if test $build_usb_blaster = yes -o $build_openjtag = yes -o $build_presto = yes; then
 
   # we can have libftdi or libftdi1, so check it and use the latest one
   PKG_CHECK_MODULES([LIBFTDI], [libftdi1], [use_libftdi=yes], [use_libftdi=no])
@@ -1090,25 +704,6 @@ if test $build_ft2232_libftdi = yes -o $build_usb_blaster_libftdi = yes -o \
       AC_SEARCH_LIBS([ftdi_new], [], [], [AC_MSG_ERROR([Cannot link with libftdi])])
     ])
 
-AC_MSG_CHECKING([for libftdi highspeed device support])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
-#include <stdio.h>
-#include <ftdi.h>
-  ]], [[
-enum ftdi_chip_type x = TYPE_2232H;
-    ]])], [
-      AC_DEFINE([BUILD_FT2232_HIGHSPEED], [1],
-        [Support FT2232H/FT4232HS with FTD2XX or libftdi.])
-      build_ft2232_highspeed=yes
-    ], [
-      build_ft2232_highspeed=no
-    ])
-    AC_MSG_RESULT([$build_ft2232_highspeed])
-
-    if test $build_ft2232_highspeed = no; then
-      AC_MSG_WARN([You need a newer libftdi version (0.16 or later).])
-    fi
-
 AC_MSG_CHECKING([for libftdi FT232H device support])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <stdio.h>
@@ -1117,7 +712,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 enum ftdi_chip_type x = TYPE_232H;
     ]])], [
       AC_DEFINE([HAS_ENUM_FT232H], [1],
-        [Support FT232H with FTD2XX or libftdi.])
+        [Support FT232H with libftdi.])
       has_enum_ft232h=yes
     ], [
       has_enum_ft232h=no
@@ -1160,6 +755,9 @@ for hidapi_lib in hidapi hidapi-hidraw hidapi-libusb; do
 	])
 done
 
+PKG_CHECK_MODULES([libjaylink], [libjaylink >= 0.1],
+	[HAVE_LIBJAYLINK=yes], [HAVE_LIBJAYLINK=no])
+
 m4_define([PROCESS_ADAPTERS], [
   m4_foreach([adapter], [$1], [
 	if test $2; then
@@ -1182,6 +780,7 @@ PROCESS_ADAPTERS([USB1_ADAPTERS], [$use_libusb1 = yes], [libusb-1.x])
 PROCESS_ADAPTERS([USB_ADAPTERS], [$use_libusb1 = yes -o $use_libusb0 = yes], [libusb-1.x or libusb-0.1])
 PROCESS_ADAPTERS([USB0_ADAPTERS], [$use_libusb0 = yes], [libusb-0.1])
 PROCESS_ADAPTERS([HIDAPI_ADAPTERS], [$use_hidapi = yes], [hidapi])
+PROCESS_ADAPTERS([LIBJAYLINK_ADAPTERS], [$use_libusb1 = yes -a $use_internal_libjaylink = yes -o $HAVE_LIBJAYLINK = yes], [libusb-1.x or libjaylink-0.1])
 
 if test $enable_stlink != no -o $enable_ti_icdi != no; then
 	AC_DEFINE([BUILD_HLADAPTER], [1], [1 if you want the High Level JTAG driver.])
@@ -1190,11 +789,14 @@ else
 fi
 AM_CONDITIONAL([HLADAPTER], [test $enable_stlink != no -o $enable_ti_icdi != no])
 
-# Disable J-Link driver if internal libjaylink is disabled and libjaylink was
-# not found by pkg-config.
 if test $enable_jlink != no; then
-  if test $use_internal_libjaylink$HAVE_LIBJAYLINK = nono; then
-      enable_jlink=no
+  if test $use_internal_libjaylink = yes; then
+    if test -f "$srcdir/src/jtag/drivers/libjaylink/configure.ac"; then
+      AX_CONFIG_SUBDIR_OPTION([src/jtag/drivers/libjaylink],
+		[--enable-subproject-build])
+    else
+      AC_MSG_ERROR([Internal libjaylink not found, run either 'git submodule init' and 'git submodule update' or disable internal libjaylink with --disable-internal-libjaylink.])
+    fi
   fi
 fi
 
@@ -1209,17 +811,13 @@ AM_CONDITIONAL([IOUTIL], [test $build_ioutil = yes])
 AM_CONDITIONAL([AT91RM9200], [test $build_at91rm9200 = yes])
 AM_CONDITIONAL([BCM2835GPIO], [test $build_bcm2835gpio = yes])
 AM_CONDITIONAL([BITBANG], [test $build_bitbang = yes])
-AM_CONDITIONAL([FT2232_LIBFTDI], [test $build_ft2232_libftdi = yes])
-AM_CONDITIONAL([FT2232_DRIVER], [test $build_ft2232_ftd2xx = yes -o $build_ft2232_libftdi = yes])
-AM_CONDITIONAL([USB_BLASTER_LIBFTDI], [test $build_usb_blaster_libftdi = yes])
-AM_CONDITIONAL([USB_BLASTER_FTD2XX], [test $build_usb_blaster_ftd2xx = yes])
 AM_CONDITIONAL([JTAG_VPI], [test $build_jtag_vpi = yes -o $build_jtag_vpi = yes])
-AM_CONDITIONAL([USB_BLASTER_DRIVER], [test $build_usb_blaster_ftd2xx = yes -o $build_usb_blaster_libftdi = yes -o $enable_usb_blaster_2 != no])
+AM_CONDITIONAL([USB_BLASTER_DRIVER], [test $build_usb_blaster = yes -o $enable_usb_blaster_2 != no])
+AM_CONDITIONAL([USB_BLASTER], [test $build_usb_blaster = yes])
 AM_CONDITIONAL([AMTJTAGACCEL], [test $build_amtjtagaccel = yes])
 AM_CONDITIONAL([GW16012], [test $build_gw16012 = yes])
-AM_CONDITIONAL([PRESTO_LIBFTDI], [test $build_presto_libftdi = yes])
-AM_CONDITIONAL([PRESTO_DRIVER], [test $build_presto_ftd2xx = yes -o $build_presto_libftdi = yes])
-AM_CONDITIONAL([OPENJTAG], [test $build_openjtag_ftd2xx = yes -o $build_openjtag_ftdi = yes])
+AM_CONDITIONAL([PRESTO], [test $build_presto = yes])
+AM_CONDITIONAL([OPENJTAG], [test $build_openjtag = yes])
 AM_CONDITIONAL([OOCD_TRACE], [test $build_oocd_trace = yes])
 AM_CONDITIONAL([REMOTE_BITBANG], [test $build_remote_bitbang = yes])
 AM_CONDITIONAL([BUSPIRATE], [test $build_buspirate = yes])
@@ -1317,7 +915,8 @@ echo
 echo
 echo OpenOCD configuration summary
 echo --------------------------------------------------
-m4_foreach([adapter], [USB1_ADAPTERS, USB_ADAPTERS, USB0_ADAPTERS, HIDAPI_ADAPTERS],
+m4_foreach([adapter], [USB1_ADAPTERS, USB_ADAPTERS, USB0_ADAPTERS,
+	HIDAPI_ADAPTERS, LIBJAYLINK_ADAPTERS],
 	[s=m4_format(["%-40s"], ADAPTER_DESC([adapter]))
 	case $ADAPTER_VAR([adapter]) in
 		auto)
@@ -1332,12 +931,3 @@ m4_foreach([adapter], [USB1_ADAPTERS, USB_ADAPTERS, USB0_ADAPTERS, HIDAPI_ADAPTE
 	esac
 ])
 echo
-
-if test $build_ft2232_libftdi = yes -o $build_ft2232_ftd2xx = yes; then
-	if test $enable_ftdi = no; then
-		AC_MSG_WARN([Building the deprecated 'ft2232' adapter driver but not its replacement!])
-		AC_MSG_WARN([Please consider using --enable-ftdi instead.])
-	else
-		AC_MSG_WARN([Building the deprecated 'ft2232' adapter driver.])
-	fi
-fi

@@ -53,6 +53,7 @@
 #include "target_request.h"
 #include "target_type.h"
 #include "arm_opcodes.h"
+#include "arm_semihosting.h"
 #include <helper/time_support.h>
 
 static int cortex_a_poll(struct target *target);
@@ -852,7 +853,8 @@ static int cortex_a_halt_smp(struct target *target)
 	head = target->head;
 	while (head != (struct target_list *)NULL) {
 		curr = head->target;
-		if ((curr != target) && (curr->state != TARGET_HALTED))
+		if ((curr != target) && (curr->state != TARGET_HALTED)
+			&& target_was_examined(curr))
 			retval += cortex_a_halt(curr);
 		head = head->next;
 	}
@@ -915,6 +917,10 @@ static int cortex_a_poll(struct target *target)
 					if (retval != ERROR_OK)
 						return retval;
 				}
+
+				if (arm_semihosting(target, &retval) != 0)
+					return retval;
+
 				target_call_event_callbacks(target,
 					TARGET_EVENT_HALTED);
 			}
@@ -1151,7 +1157,8 @@ static int cortex_a_restore_smp(struct target *target, int handle_breakpoints)
 	head = target->head;
 	while (head != (struct target_list *)NULL) {
 		curr = head->target;
-		if ((curr != target) && (curr->state != TARGET_RUNNING)) {
+		if ((curr != target) && (curr->state != TARGET_RUNNING)
+			&& target_was_examined(curr)) {
 			/*  resume current address , not in step mode */
 			retval += cortex_a_internal_restore(curr, 1, &address,
 					handle_breakpoints, 0);
@@ -1201,7 +1208,7 @@ static int cortex_a_resume(struct target *target, int current,
 static int cortex_a_debug_entry(struct target *target)
 {
 	int i;
-	uint32_t regfile[16], cpsr, dscr;
+	uint32_t regfile[16], cpsr, spsr, dscr;
 	int retval = ERROR_OK;
 	struct working_area *regfile_working_area = NULL;
 	struct cortex_a_common *cortex_a = target_to_cortex_a(target);
@@ -1250,6 +1257,7 @@ static int cortex_a_debug_entry(struct target *target)
 	if (cortex_a->fast_reg_read)
 		target_alloc_working_area(target, 64, &regfile_working_area);
 
+
 	/* First load register acessible through core debug port*/
 	if (!regfile_working_area)
 		retval = arm_dpm_read_current_registers(&armv7a->dpm);
@@ -1293,6 +1301,17 @@ static int cortex_a_debug_entry(struct target *target)
 		buf_set_u32(reg->value, 0, 32, regfile[ARM_PC]);
 		reg->dirty = reg->valid;
 	}
+
+	/* read Saved PSR */
+	retval = cortex_a_dap_read_coreregister_u32(target, &spsr, 17);
+	/*  store current spsr */
+	if (retval != ERROR_OK)
+		return retval;
+
+	reg = arm->spsr;
+	buf_set_u32(reg->value, 0, 32, spsr);
+	reg->valid = 1;
+	reg->dirty = 0;
 
 #if 0
 /* TODO, Move this */
@@ -1919,7 +1938,8 @@ static int cortex_a_assert_reset(struct target *target)
 	}
 
 	/* registers are now invalid */
-	register_cache_invalidate(armv7a->arm.core_cache);
+	if (target_was_examined(target))
+		register_cache_invalidate(armv7a->arm.core_cache);
 
 	target->state = TARGET_RESET;
 
@@ -1935,17 +1955,22 @@ static int cortex_a_deassert_reset(struct target *target)
 	/* be certain SRST is off */
 	jtag_add_reset(0, 0);
 
-	retval = cortex_a_poll(target);
-	if (retval != ERROR_OK)
-		return retval;
+	if (target_was_examined(target)) {
+		retval = cortex_a_poll(target);
+		if (retval != ERROR_OK)
+			return retval;
+	}
 
 	if (target->reset_halt) {
 		if (target->state != TARGET_HALTED) {
 			LOG_WARNING("%s: ran after reset and before halt ...",
 				target_name(target));
-			retval = target_halt(target);
-			if (retval != ERROR_OK)
-				return retval;
+			if (target_was_examined(target)) {
+				retval = target_halt(target);
+				if (retval != ERROR_OK)
+					return retval;
+			} else
+				target->state = TARGET_UNKNOWN;
 		}
 	}
 
@@ -2953,6 +2978,7 @@ static int cortex_a_examine_first(struct target *target)
 	struct cortex_a_common *cortex_a = target_to_cortex_a(target);
 	struct armv7a_common *armv7a = &cortex_a->armv7a_common;
 	struct adiv5_dap *swjdp = armv7a->arm.dap;
+
 	int i;
 	int retval = ERROR_OK;
 	uint32_t didr, ctypr, ttypr, cpuid, dbg_osreg;

@@ -2178,7 +2178,8 @@ int target_checksum_memory(struct target *target, uint32_t address, uint32_t siz
 	return retval;
 }
 
-int target_blank_check_memory(struct target *target, uint32_t address, uint32_t size, uint32_t* blank)
+int target_blank_check_memory(struct target *target, uint32_t address, uint32_t size, uint32_t* blank,
+	uint8_t erased_value)
 {
 	int retval;
 	if (!target_was_examined(target)) {
@@ -2189,7 +2190,7 @@ int target_blank_check_memory(struct target *target, uint32_t address, uint32_t 
 	if (target->type->blank_check_memory == 0)
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 
-	retval = target->type->blank_check_memory(target, address, size, blank);
+	retval = target->type->blank_check_memory(target, address, size, blank, erased_value);
 
 	return retval;
 }
@@ -3165,7 +3166,7 @@ COMMAND_HANDLER(handle_load_image_command)
 	duration_start(&bench);
 
 	if (image_open(&image, CMD_ARGV[0], (CMD_ARGC >= 3) ? CMD_ARGV[2] : NULL) != ERROR_OK)
-		return ERROR_OK;
+		return ERROR_FAIL;
 
 	image_size = 0x0;
 	retval = ERROR_OK;
@@ -3175,6 +3176,7 @@ COMMAND_HANDLER(handle_load_image_command)
 			command_print(CMD_CTX,
 						  "error allocating buffer for section (%d bytes)",
 						  (int)(image.sections[i].size));
+			retval = ERROR_FAIL;
 			break;
 		}
 
