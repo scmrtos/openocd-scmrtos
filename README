@@ -4,7 +4,7 @@ Welcome to OpenOCD!
 OpenOCD provides on-chip programming and debugging support with a
 layered architecture of JTAG interface and TAP support including:
 
-- (X)SVF playback to faciliate automated boundary scan and FPGA/CPLD
+- (X)SVF playback to facilitate automated boundary scan and FPGA/CPLD
   programming;
 - debug target support (e.g. ARM, MIPS): single-stepping,
   breakpoints/watchpoints, gprof profiling, etc;
@@ -214,7 +214,7 @@ You'll also need:
 Additionally, for building from git:
 
 - autoconf >= 2.64
-- automake >= 1.9
+- automake >= 1.14
 - texinfo
 
 USB-based adapters depend on libusb-1.0 and some older drivers require
@@ -233,7 +233,7 @@ Permissions delegation
 Running OpenOCD with root/administrative permissions is strongly
 discouraged for security reasons.
 
-For USB devices on GNU/Linux you should use the contrib/99-openocd.rules
+For USB devices on GNU/Linux you should use the contrib/60-openocd.rules
 file. It probably belongs somewhere in /etc/udev/rules.d, but
 consult your operating system documentation to be sure. Do not forget
 to add yourself to the "plugdev" group.

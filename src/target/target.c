@@ -283,6 +283,10 @@ const char *target_state_name(struct target *t)
 		LOG_ERROR("Invalid target state: %d", (int)(t->state));
 		cp = "(*BUG*unknown*BUG*)";
 	}
+
+	if (!target_was_examined(t) && t->defer_examine)
+		cp = "examine deferred";
+
 	return cp;
 }
 
@@ -730,6 +734,9 @@ int target_examine(void)
 					target);
 			continue;
 		}
+
+		if (target->defer_examine)
+			continue;
 
 		retval = target_examine_one(target);
 		if (retval != ERROR_OK)
@@ -1937,12 +1944,9 @@ int target_arch_state(struct target *target)
 {
 	int retval;
 	if (target == NULL) {
-		LOG_USER("No target has been configured");
+		LOG_WARNING("No target has been configured");
 		return ERROR_OK;
 	}
-
-	LOG_USER("%s: target state: %s", target_name(target),
-		 target_state_name(target));
 
 	if (target->state != TARGET_HALTED)
 		return ERROR_OK;
@@ -3292,7 +3296,13 @@ COMMAND_HANDLER(handle_dump_image_command)
 	return retval;
 }
 
-static COMMAND_HELPER(handle_verify_image_command_internal, int verify)
+enum verify_mode {
+	IMAGE_TEST = 0,
+	IMAGE_VERIFY = 1,
+	IMAGE_CHECKSUM_ONLY = 2
+};
+
+static COMMAND_HELPER(handle_verify_image_command_internal, enum verify_mode verify)
 {
 	uint8_t *buffer;
 	size_t buf_cnt;
@@ -3350,7 +3360,7 @@ static COMMAND_HELPER(handle_verify_image_command_internal, int verify)
 			break;
 		}
 
-		if (verify) {
+		if (verify >= IMAGE_VERIFY) {
 			/* calculate checksum of image */
 			retval = image_calculate_checksum(buffer, buf_cnt, &checksum);
 			if (retval != ERROR_OK) {
@@ -3363,7 +3373,12 @@ static COMMAND_HELPER(handle_verify_image_command_internal, int verify)
 				free(buffer);
 				break;
 			}
-
+			if ((checksum != mem_checksum) && (verify == IMAGE_CHECKSUM_ONLY)) {
+				LOG_ERROR("checksum mismatch");
+				free(buffer);
+				retval = ERROR_FAIL;
+				goto done;
+			}
 			if (checksum != mem_checksum) {
 				/* failed crc checksum, fall back to a binary compare */
 				uint8_t *data;
@@ -3428,14 +3443,19 @@ done:
 	return retval;
 }
 
+COMMAND_HANDLER(handle_verify_image_checksum_command)
+{
+	return CALL_COMMAND_HANDLER(handle_verify_image_command_internal, IMAGE_CHECKSUM_ONLY);
+}
+
 COMMAND_HANDLER(handle_verify_image_command)
 {
-	return CALL_COMMAND_HANDLER(handle_verify_image_command_internal, 1);
+	return CALL_COMMAND_HANDLER(handle_verify_image_command_internal, IMAGE_VERIFY);
 }
 
 COMMAND_HANDLER(handle_test_image_command)
 {
-	return CALL_COMMAND_HANDLER(handle_verify_image_command_internal, 0);
+	return CALL_COMMAND_HANDLER(handle_verify_image_command_internal, IMAGE_TEST);
 }
 
 static int handle_bp_command_list(struct command_context *cmd_ctx)
@@ -4325,6 +4345,7 @@ enum target_cfg_param {
 	TCFG_CHAIN_POSITION,
 	TCFG_DBGBASE,
 	TCFG_RTOS,
+	TCFG_DEFER_EXAMINE,
 };
 
 static Jim_Nvp nvp_config_opts[] = {
@@ -4339,6 +4360,7 @@ static Jim_Nvp nvp_config_opts[] = {
 	{ .name = "-chain-position",   .value = TCFG_CHAIN_POSITION },
 	{ .name = "-dbgbase",          .value = TCFG_DBGBASE },
 	{ .name = "-rtos",             .value = TCFG_RTOS },
+	{ .name = "-defer-examine",    .value = TCFG_DEFER_EXAMINE },
 	{ .name = NULL, .value = -1 }
 };
 
@@ -4613,6 +4635,13 @@ no_params:
 			}
 			/* loop for more */
 			break;
+
+		case TCFG_DEFER_EXAMINE:
+			/* DEFER_EXAMINE */
+			target->defer_examine = true;
+			/* loop for more */
+			break;
+
 		}
 	} /* while (goi->argc) */
 
@@ -4627,12 +4656,9 @@ static int jim_target_configure(Jim_Interp *interp, int argc, Jim_Obj * const *a
 
 	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
 	goi.isconfigure = !strcmp(Jim_GetString(argv[0], NULL), "configure");
-	int need_args = 1 + goi.isconfigure;
-	if (goi.argc < need_args) {
+	if (goi.argc < 1) {
 		Jim_WrongNumArgs(goi.interp, goi.argc, goi.argv,
-			goi.isconfigure
-				? "missing: -option VALUE ..."
-				: "missing: -option ...");
+				 "missing: -option ...");
 		return JIM_ERR;
 	}
 	struct target *target = Jim_CmdPrivData(goi.interp);
@@ -4883,17 +4909,55 @@ static int jim_target_tap_disabled(Jim_Interp *interp)
 
 static int jim_target_examine(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
-	if (argc != 1) {
-		Jim_WrongNumArgs(interp, 1, argv, "[no parameters]");
+	bool allow_defer = false;
+
+	Jim_GetOptInfo goi;
+	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
+	if (goi.argc > 1) {
+		const char *cmd_name = Jim_GetString(argv[0], NULL);
+		Jim_SetResultFormatted(goi.interp,
+				"usage: %s ['allow-defer']", cmd_name);
 		return JIM_ERR;
 	}
+	if (goi.argc > 0 &&
+	    strcmp(Jim_GetString(argv[1], NULL), "allow-defer") == 0) {
+		/* consume it */
+		struct Jim_Obj *obj;
+		int e = Jim_GetOpt_Obj(&goi, &obj);
+		if (e != JIM_OK)
+			return e;
+		allow_defer = true;
+	}
+
 	struct target *target = Jim_CmdPrivData(interp);
 	if (!target->tap->enabled)
 		return jim_target_tap_disabled(interp);
 
+	if (allow_defer && target->defer_examine) {
+		LOG_INFO("Deferring arp_examine of %s", target_name(target));
+		LOG_INFO("Use arp_examine command to examine it manually!");
+		return JIM_OK;
+	}
+
 	int e = target->type->examine(target);
 	if (e != ERROR_OK)
 		return JIM_ERR;
+	return JIM_OK;
+}
+
+static int jim_target_was_examined(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
+{
+	struct target *target = Jim_CmdPrivData(interp);
+
+	Jim_SetResultBool(interp, target_was_examined(target));
+	return JIM_OK;
+}
+
+static int jim_target_examine_deferred(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
+{
+	struct target *target = Jim_CmdPrivData(interp);
+
+	Jim_SetResultBool(interp, target->defer_examine);
 	return JIM_OK;
 }
 
@@ -4964,6 +5028,10 @@ static int jim_target_reset(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 				target_name(target));
 		return JIM_ERR;
 	}
+
+	if (target->defer_examine)
+		target_reset_examined(target);
+
 	/* determine if we should halt or not. */
 	target->reset_halt = !!a;
 	/* When this happens - all workareas are invalid. */
@@ -5174,6 +5242,21 @@ static const struct command_registration target_instance_command_handlers[] = {
 		.mode = COMMAND_EXEC,
 		.jim_handler = jim_target_examine,
 		.help = "used internally for reset processing",
+		.usage = "arp_examine ['allow-defer']",
+	},
+	{
+		.name = "was_examined",
+		.mode = COMMAND_EXEC,
+		.jim_handler = jim_target_was_examined,
+		.help = "used internally for reset processing",
+		.usage = "was_examined",
+	},
+	{
+		.name = "examine_deferred",
+		.mode = COMMAND_EXEC,
+		.jim_handler = jim_target_examine_deferred,
+		.help = "used internally for reset processing",
+		.usage = "examine_deferred",
 	},
 	{
 		.name = "arp_halt_gdb",
@@ -5325,14 +5408,7 @@ static int target_create(Jim_GetOptInfo *goi)
 	target->halt_issued			= false;
 
 	/* initialize trace information */
-	target->trace_info = malloc(sizeof(struct trace));
-	target->trace_info->num_trace_points         = 0;
-	target->trace_info->trace_points_size        = 0;
-	target->trace_info->trace_points             = NULL;
-	target->trace_info->trace_history_size       = 0;
-	target->trace_info->trace_history            = NULL;
-	target->trace_info->trace_history_pos        = 0;
-	target->trace_info->trace_history_overflowed = 0;
+	target->trace_info = calloc(1, sizeof(struct trace));
 
 	target->dbgmsg          = NULL;
 	target->dbg_msg_enabled = 0;
@@ -6147,6 +6223,12 @@ static const struct command_registration target_exec_command_handlers[] = {
 		.handler = handle_dump_image_command,
 		.mode = COMMAND_EXEC,
 		.usage = "filename address size",
+	},
+	{
+		.name = "verify_image_checksum",
+		.handler = handle_verify_image_checksum_command,
+		.mode = COMMAND_EXEC,
+		.usage = "filename [offset [type]]",
 	},
 	{
 		.name = "verify_image",

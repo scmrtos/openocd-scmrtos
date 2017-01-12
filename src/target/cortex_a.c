@@ -54,6 +54,7 @@
 #include "target_type.h"
 #include "arm_opcodes.h"
 #include "arm_semihosting.h"
+#include "jtag/swd.h"
 #include <helper/time_support.h>
 
 static int cortex_a_poll(struct target *target);
@@ -198,77 +199,15 @@ static int cortex_a_mmu_modify(struct target *target, int enable)
 /*
  * Cortex-A Basic debug access, very low level assumes state is saved
  */
-static int cortex_a8_init_debug_access(struct target *target)
-{
-	struct armv7a_common *armv7a = target_to_armv7a(target);
-	int retval;
-
-	LOG_DEBUG(" ");
-
-	/* Unlocking the debug registers for modification
-	 * The debugport might be uninitialised so try twice */
-	retval = mem_ap_write_atomic_u32(armv7a->debug_ap,
-			armv7a->debug_base + CPUDBG_LOCKACCESS, 0xC5ACCE55);
-	if (retval != ERROR_OK) {
-		/* try again */
-		retval = mem_ap_write_atomic_u32(armv7a->debug_ap,
-				armv7a->debug_base + CPUDBG_LOCKACCESS, 0xC5ACCE55);
-		if (retval == ERROR_OK)
-			LOG_USER(
-				"Locking debug access failed on first, but succeeded on second try.");
-	}
-
-	return retval;
-}
-
-/*
- * Cortex-A Basic debug access, very low level assumes state is saved
- */
 static int cortex_a_init_debug_access(struct target *target)
 {
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 	int retval;
-	uint32_t dbg_osreg;
-	uint32_t cortex_part_num;
-	struct cortex_a_common *cortex_a = target_to_cortex_a(target);
 
-	LOG_DEBUG(" ");
-	cortex_part_num = (cortex_a->cpuid & CORTEX_A_MIDR_PARTNUM_MASK) >>
-		CORTEX_A_MIDR_PARTNUM_SHIFT;
-
-	switch (cortex_part_num) {
-	case CORTEX_A7_PARTNUM:
-	case CORTEX_A15_PARTNUM:
-		retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-						    armv7a->debug_base + CPUDBG_OSLSR,
-						    &dbg_osreg);
-		if (retval != ERROR_OK)
-			return retval;
-
-		LOG_DEBUG("DBGOSLSR  0x%" PRIx32, dbg_osreg);
-
-		if (dbg_osreg & CPUDBG_OSLAR_LK_MASK)
-			/* Unlocking the DEBUG OS registers for modification */
-			retval = mem_ap_write_atomic_u32(armv7a->debug_ap,
-							     armv7a->debug_base + CPUDBG_OSLAR,
-							     0);
-		break;
-
-	case CORTEX_A5_PARTNUM:
-	case CORTEX_A8_PARTNUM:
-	case CORTEX_A9_PARTNUM:
-	default:
-		retval = cortex_a8_init_debug_access(target);
-	}
-
-	if (retval != ERROR_OK)
-		return retval;
-	/* Clear Sticky Power Down status Bit in PRSR to enable access to
-	   the registers in the Core Power Domain */
-	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-			armv7a->debug_base + CPUDBG_PRSR, &dbg_osreg);
-	LOG_DEBUG("target->coreid %" PRId32 " DBGPRSR  0x%" PRIx32, target->coreid, dbg_osreg);
-
+	/* lock memory-mapped access to debug registers to prevent
+	 * software interference */
+	retval = mem_ap_write_atomic_u32(armv7a->debug_ap,
+			armv7a->debug_base + CPUDBG_LOCKACCESS, 0);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -1302,16 +1241,18 @@ static int cortex_a_debug_entry(struct target *target)
 		reg->dirty = reg->valid;
 	}
 
-	/* read Saved PSR */
-	retval = cortex_a_dap_read_coreregister_u32(target, &spsr, 17);
-	/*  store current spsr */
-	if (retval != ERROR_OK)
-		return retval;
+	if (arm->spsr) {
+		/* read Saved PSR */
+		retval = cortex_a_dap_read_coreregister_u32(target, &spsr, 17);
+		/*  store current spsr */
+		if (retval != ERROR_OK)
+			return retval;
 
-	reg = arm->spsr;
-	buf_set_u32(reg->value, 0, 32, spsr);
-	reg->valid = 1;
-	reg->dirty = 0;
+		reg = arm->spsr;
+		buf_set_u32(reg->value, 0, 32, spsr);
+		reg->valid = 1;
+		reg->dirty = 0;
+	}
 
 #if 0
 /* TODO, Move this */
@@ -1929,9 +1870,15 @@ static int cortex_a_assert_reset(struct target *target)
 		/* REVISIT handle "pulls" cases, if there's
 		 * hardware that needs them to work.
 		 */
-		if (target->reset_halt)
-			if (jtag_get_reset_config() & RESET_SRST_NO_GATING)
-				jtag_add_reset(0, 1);
+
+		/*
+		 * FIXME: fix reset when transport is SWD. This is a temporary
+		 * work-around for release v0.10 that is not intended to stay!
+		 */
+		if (transport_is_swd() ||
+				(target->reset_halt && (jtag_get_reset_config() & RESET_SRST_NO_GATING)))
+			jtag_add_reset(0, 1);
+
 	} else {
 		LOG_ERROR("%s: how to reset?", target_name(target));
 		return ERROR_FAIL;
@@ -2981,7 +2928,7 @@ static int cortex_a_examine_first(struct target *target)
 
 	int i;
 	int retval = ERROR_OK;
-	uint32_t didr, ctypr, ttypr, cpuid, dbg_osreg;
+	uint32_t didr, cpuid, dbg_osreg;
 
 	retval = dap_dp_init(swjdp);
 	if (retval != ERROR_OK) {
@@ -3043,9 +2990,11 @@ static int cortex_a_examine_first(struct target *target)
 		armv7a->debug_base = target->dbgbase;
 
 	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-			armv7a->debug_base + CPUDBG_CPUID, &cpuid);
-	if (retval != ERROR_OK)
+			armv7a->debug_base + CPUDBG_DIDR, &didr);
+	if (retval != ERROR_OK) {
+		LOG_DEBUG("Examine %s failed", "DIDR");
 		return retval;
+	}
 
 	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
 			armv7a->debug_base + CPUDBG_CPUID, &cpuid);
@@ -3054,68 +3003,56 @@ static int cortex_a_examine_first(struct target *target)
 		return retval;
 	}
 
-	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-			armv7a->debug_base + CPUDBG_CTYPR, &ctypr);
-	if (retval != ERROR_OK) {
-		LOG_DEBUG("Examine %s failed", "CTYPR");
-		return retval;
-	}
-
-	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-			armv7a->debug_base + CPUDBG_TTYPR, &ttypr);
-	if (retval != ERROR_OK) {
-		LOG_DEBUG("Examine %s failed", "TTYPR");
-		return retval;
-	}
-
-	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-			armv7a->debug_base + CPUDBG_DIDR, &didr);
-	if (retval != ERROR_OK) {
-		LOG_DEBUG("Examine %s failed", "DIDR");
-		return retval;
-	}
-
-	LOG_DEBUG("cpuid = 0x%08" PRIx32, cpuid);
-	LOG_DEBUG("ctypr = 0x%08" PRIx32, ctypr);
-	LOG_DEBUG("ttypr = 0x%08" PRIx32, ttypr);
 	LOG_DEBUG("didr = 0x%08" PRIx32, didr);
+	LOG_DEBUG("cpuid = 0x%08" PRIx32, cpuid);
 
-	cortex_a->cpuid = cpuid;
-	cortex_a->ctypr = ctypr;
-	cortex_a->ttypr = ttypr;
 	cortex_a->didr = didr;
+	cortex_a->cpuid = cpuid;
 
-	/* Unlocking the debug registers */
-	if ((cpuid & CORTEX_A_MIDR_PARTNUM_MASK) >> CORTEX_A_MIDR_PARTNUM_SHIFT ==
-		CORTEX_A15_PARTNUM) {
-
-		retval = mem_ap_write_atomic_u32(armv7a->debug_ap,
-						     armv7a->debug_base + CPUDBG_OSLAR,
-						     0);
-
-		if (retval != ERROR_OK)
-			return retval;
-
-	}
-	/* Unlocking the debug registers */
-	if ((cpuid & CORTEX_A_MIDR_PARTNUM_MASK) >> CORTEX_A_MIDR_PARTNUM_SHIFT ==
-		CORTEX_A7_PARTNUM) {
-
-		retval = mem_ap_write_atomic_u32(armv7a->debug_ap,
-						     armv7a->debug_base + CPUDBG_OSLAR,
-						     0);
-
-		if (retval != ERROR_OK)
-			return retval;
-
-	}
 	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-					    armv7a->debug_base + CPUDBG_PRSR, &dbg_osreg);
-
+				    armv7a->debug_base + CPUDBG_PRSR, &dbg_osreg);
 	if (retval != ERROR_OK)
 		return retval;
-
 	LOG_DEBUG("target->coreid %" PRId32 " DBGPRSR  0x%" PRIx32, target->coreid, dbg_osreg);
+
+	if ((dbg_osreg & PRSR_POWERUP_STATUS) == 0) {
+		LOG_ERROR("target->coreid %" PRId32 " powered down!", target->coreid);
+		target->state = TARGET_UNKNOWN; /* TARGET_NO_POWER? */
+		return ERROR_TARGET_INIT_FAILED;
+	}
+
+	if (dbg_osreg & PRSR_STICKY_RESET_STATUS)
+		LOG_DEBUG("target->coreid %" PRId32 " was reset!", target->coreid);
+
+	/* Read DBGOSLSR and check if OSLK is implemented */
+	retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
+				armv7a->debug_base + CPUDBG_OSLSR, &dbg_osreg);
+	if (retval != ERROR_OK)
+		return retval;
+	LOG_DEBUG("target->coreid %" PRId32 " DBGOSLSR 0x%" PRIx32, target->coreid, dbg_osreg);
+
+	/* check if OS Lock is implemented */
+	if ((dbg_osreg & OSLSR_OSLM) == OSLSR_OSLM0 || (dbg_osreg & OSLSR_OSLM) == OSLSR_OSLM1) {
+		/* check if OS Lock is set */
+		if (dbg_osreg & OSLSR_OSLK) {
+			LOG_DEBUG("target->coreid %" PRId32 " OSLock set! Trying to unlock", target->coreid);
+
+			retval = mem_ap_write_atomic_u32(armv7a->debug_ap,
+							armv7a->debug_base + CPUDBG_OSLAR,
+							0);
+			if (retval == ERROR_OK)
+				retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
+							armv7a->debug_base + CPUDBG_OSLSR, &dbg_osreg);
+
+			/* if we fail to access the register or cannot reset the OSLK bit, bail out */
+			if (retval != ERROR_OK || (dbg_osreg & OSLSR_OSLK) != 0) {
+				LOG_ERROR("target->coreid %" PRId32 " OSLock sticky, core not powered?",
+						target->coreid);
+				target->state = TARGET_UNKNOWN; /* TARGET_NO_POWER? */
+				return ERROR_TARGET_INIT_FAILED;
+			}
+		}
+	}
 
 	armv7a->arm.core_type = ARM_MODE_MON;
 
@@ -3175,6 +3112,7 @@ static int cortex_a_init_target(struct command_context *cmd_ctx,
 	struct target *target)
 {
 	/* examine_first() does a bunch of this */
+	arm_semihosting_init(target);
 	return ERROR_OK;
 }
 
@@ -3594,8 +3532,8 @@ struct target_type cortexr4_target = {
 	/* REVISIT allow exporting VFP3 registers ... */
 	.get_gdb_reg_list = arm_get_gdb_reg_list,
 
-	.read_memory = cortex_a_read_memory,
-	.write_memory = cortex_a_write_memory,
+	.read_memory = cortex_a_read_phys_memory,
+	.write_memory = cortex_a_write_phys_memory,
 
 	.checksum_memory = arm_checksum_memory,
 	.blank_check_memory = arm_blank_check_memory,
