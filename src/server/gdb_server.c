@@ -952,9 +952,14 @@ static int gdb_new_connection(struct connection *connection)
 	breakpoint_clear_target(gdb_service->target);
 	watchpoint_clear_target(gdb_service->target);
 
-	/* clean previous rtos session if supported*/
-	if ((gdb_service->target->rtos) && (gdb_service->target->rtos->type->clean))
-		gdb_service->target->rtos->type->clean(gdb_service->target);
+	if (gdb_service->target->rtos) {
+		/* clean previous rtos session if supported*/
+		if (gdb_service->target->rtos->type->clean)
+			gdb_service->target->rtos->type->clean(gdb_service->target);
+
+		/* update threads */
+		rtos_update_threads(gdb_service->target);
+	}
 
 	/* remove the initial ACK from the incoming buffer */
 	retval = gdb_get_char(connection, &initial_ack);
