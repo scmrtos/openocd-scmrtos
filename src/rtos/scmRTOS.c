@@ -42,6 +42,7 @@ static int scmRTOS_create                    (struct target *target);
 static int scmRTOS_update_proc_info          (struct rtos *rtos);
 static int scmRTOS_get_proc_reg_list         (struct rtos *rtos, int64_t thread_id, char **hex_reg_list);
 static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]);
+static int scmRTOS_clean                     (struct target *target);
 //------------------------------------------------------------------------------
 //
 //    General
@@ -174,7 +175,8 @@ struct rtos_type scmRTOS_rtos =
     .create                    = scmRTOS_create,
     .update_threads            = scmRTOS_update_proc_info,
     .get_thread_reg_list       = scmRTOS_get_proc_reg_list,
-    .get_symbol_list_to_lookup = scmRTOS_get_symbol_list_to_lookup
+    .get_symbol_list_to_lookup = scmRTOS_get_symbol_list_to_lookup,
+    .clean                     = scmRTOS_clean,
 };
 //------------------------------------------------------------------------------
 static const symbols_t scmRTOS_symbols[] = 
@@ -303,6 +305,8 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
         return -2;
     }
 
+    rtos_free_threadlist(rtos);   // delete previous process details if any
+
     os_info_t os_info = 
     {
         rtos->symbols[SID_DEBUG_INFO].address,
@@ -349,8 +353,6 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
         LOG_ERROR("scmRTOS> E: could not get processes data");
         return res;
     }
-
-    rtos_free_threadlist(rtos);   // delete previous process details if any
 
     res = renew_proc_info(rtos, &os_info, &os_kernel, os_processes);
     if (res != ERROR_OK) 
@@ -420,6 +422,26 @@ int scmRTOS_get_symbol_list_to_lookup(symbol_table_elem_t *symbol_list[])
 
     return 0;
 }
+//------------------------------------------------------------------------------
+static int scmRTOS_clean(struct target *target)
+{
+    struct rtos * rtos = target->rtos;
+    if(rtos == NULL) 
+        return ERROR_OK;
+        
+	scmRTOS_params_t *params = (scmRTOS_params_t *)
+		rtos->rtos_specific_params;
+    if(params == NULL)
+        return ERROR_OK;
+
+    rtos->thread_count = 0;
+    
+    for(int i = 0; i < MAX_PROCESS_COUNT; ++i) 
+        params->ProcessTable[i] = 0;
+        
+    return ERROR_OK;
+}
+
 //------------------------------------------------------------------------------
 //
 //    Internal Functions
