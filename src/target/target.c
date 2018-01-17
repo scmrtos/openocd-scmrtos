@@ -105,6 +105,7 @@ extern struct target_type nds32_v3m_target;
 extern struct target_type or1k_target;
 extern struct target_type quark_x10xx_target;
 extern struct target_type quark_d20xx_target;
+extern struct target_type stm8_target;
 
 static struct target_type *target_types[] = {
 	&arm7tdmi_target,
@@ -136,6 +137,7 @@ static struct target_type *target_types[] = {
 	&or1k_target,
 	&quark_x10xx_target,
 	&quark_d20xx_target,
+	&stm8_target,
 #if BUILD_TARGET64
 	&aarch64_target,
 #endif
@@ -202,10 +204,6 @@ static const Jim_Nvp nvp_target_event[] = {
 	{ .value = TARGET_EVENT_RESET_ASSERT_POST,   .name = "reset-assert-post" },
 	{ .value = TARGET_EVENT_RESET_DEASSERT_PRE,  .name = "reset-deassert-pre" },
 	{ .value = TARGET_EVENT_RESET_DEASSERT_POST, .name = "reset-deassert-post" },
-	{ .value = TARGET_EVENT_RESET_HALT_PRE,      .name = "reset-halt-pre" },
-	{ .value = TARGET_EVENT_RESET_HALT_POST,     .name = "reset-halt-post" },
-	{ .value = TARGET_EVENT_RESET_WAIT_PRE,      .name = "reset-wait-pre" },
-	{ .value = TARGET_EVENT_RESET_WAIT_POST,     .name = "reset-wait-post" },
 	{ .value = TARGET_EVENT_RESET_INIT,          .name = "reset-init" },
 	{ .value = TARGET_EVENT_RESET_END,           .name = "reset-end" },
 
@@ -1098,7 +1096,7 @@ int target_add_breakpoint(struct target *target,
 		struct breakpoint *breakpoint)
 {
 	if ((target->state != TARGET_HALTED) && (breakpoint->type != BKPT_HARD)) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add breakpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_breakpoint(target, breakpoint);
@@ -1108,7 +1106,7 @@ int target_add_context_breakpoint(struct target *target,
 		struct breakpoint *breakpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add context breakpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_context_breakpoint(target, breakpoint);
@@ -1118,7 +1116,7 @@ int target_add_hybrid_breakpoint(struct target *target,
 		struct breakpoint *breakpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add hybrid breakpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_hybrid_breakpoint(target, breakpoint);
@@ -1134,7 +1132,7 @@ int target_add_watchpoint(struct target *target,
 		struct watchpoint *watchpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target_name(target));
+		LOG_WARNING("target %s is not halted (add watchpoint)", target_name(target));
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->add_watchpoint(target, watchpoint);
@@ -1148,7 +1146,7 @@ int target_hit_watchpoint(struct target *target,
 		struct watchpoint **hit_watchpoint)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (hit watchpoint)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
@@ -1177,7 +1175,7 @@ int target_step(struct target *target,
 int target_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fileio_info)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (gdb fileio)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->get_gdb_fileio_info(target, fileio_info);
@@ -1186,7 +1184,7 @@ int target_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fi
 int target_gdb_fileio_end(struct target *target, int retcode, int fileio_errno, bool ctrl_c)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (gdb fileio end)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->gdb_fileio_end(target, retcode, fileio_errno, ctrl_c);
@@ -1196,7 +1194,7 @@ int target_profiling(struct target *target, uint32_t *samples,
 			uint32_t max_num_samples, uint32_t *num_samples, uint32_t seconds)
 {
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target %s is not halted", target->cmd_name);
+		LOG_WARNING("target %s is not halted (profiling)", target->cmd_name);
 		return ERROR_TARGET_NOT_HALTED;
 	}
 	return target->type->profiling(target, samples, max_num_samples,
@@ -1870,6 +1868,17 @@ int target_free_working_area(struct target *target, struct working_area *area)
 	return target_free_working_area_restore(target, area, 1);
 }
 
+static void target_destroy(struct target *target)
+{
+	if (target->type->deinit_target)
+		target->type->deinit_target(target);
+
+	free(target->type);
+	free(target->trace_info);
+	free(target->cmd_name);
+	free(target);
+}
+
 void target_quit(void)
 {
 	struct target_event_callback *pe = target_event_callbacks;
@@ -1888,11 +1897,15 @@ void target_quit(void)
 	}
 	target_timer_callbacks = NULL;
 
-	for (struct target *target = all_targets;
-	     target; target = target->next) {
-		if (target->type->deinit_target)
-			target->type->deinit_target(target);
+	for (struct target *target = all_targets; target;) {
+		struct target *tmp;
+
+		tmp = target->next;
+		target_destroy(target);
+		target = tmp;
 	}
+
+	all_targets = NULL;
 }
 
 /* free resources and restore memory, if restoring memory fails,
@@ -3009,16 +3022,16 @@ static void handle_md_output(struct command_context *cmd_ctx,
 	const char *value_fmt;
 	switch (size) {
 	case 8:
-		value_fmt = "%16.16llx ";
+		value_fmt = "%16.16"PRIx64" ";
 		break;
 	case 4:
-		value_fmt = "%8.8x ";
+		value_fmt = "%8.8"PRIx64" ";
 		break;
 	case 2:
-		value_fmt = "%4.4x ";
+		value_fmt = "%4.4"PRIx64" ";
 		break;
 	case 1:
-		value_fmt = "%2.2x ";
+		value_fmt = "%2.2"PRIx64" ";
 		break;
 	default:
 		/* "can't happen", caller checked */
@@ -3669,7 +3682,7 @@ COMMAND_HANDLER(handle_bp_command)
 				addr = 0;
 				return handle_bp_command_set(CMD_CTX, addr, asid, length, hw);
 			}
-
+			/* fallthrough */
 		case 4:
 			hw = BKPT_HARD;
 			COMMAND_PARSE_ADDRESS(CMD_ARGV[0], addr);
@@ -3825,7 +3838,7 @@ typedef unsigned char UNIT[2];  /* unit of profiling */
 
 /* Dump a gmon.out histogram file. */
 static void write_gmon(uint32_t *samples, uint32_t sampleNum, const char *filename, bool with_range,
-			uint32_t start_address, uint32_t end_address, struct target *target)
+			uint32_t start_address, uint32_t end_address, struct target *target, uint32_t duration_ms)
 {
 	uint32_t i;
 	FILE *f = fopen(filename, "w");
@@ -3893,7 +3906,8 @@ static void write_gmon(uint32_t *samples, uint32_t sampleNum, const char *filena
 	writeLong(f, min, target);			/* low_pc */
 	writeLong(f, max, target);			/* high_pc */
 	writeLong(f, numBuckets, target);	/* # of buckets */
-	writeLong(f, 100, target);			/* KLUDGE! We lie, ca. 100Hz best case. */
+	float sample_rate = sampleNum / (duration_ms / 1000.0);
+	writeLong(f, sample_rate, target);
 	writeString(f, "seconds");
 	for (i = 0; i < (15-strlen("seconds")); i++)
 		writeData(f, &zero, 1);
@@ -3942,6 +3956,7 @@ COMMAND_HANDLER(handle_profile_command)
 		return ERROR_FAIL;
 	}
 
+	uint64_t timestart_ms = timeval_ms();
 	/**
 	 * Some cores let us sample the PC without the
 	 * annoying halt/resume step; for example, ARMv7 PCSR.
@@ -3953,6 +3968,7 @@ COMMAND_HANDLER(handle_profile_command)
 		free(samples);
 		return retval;
 	}
+	uint32_t duration_ms = timeval_ms() - timestart_ms;
 
 	assert(num_of_samples <= MAX_PROFILE_SAMPLE_NUM);
 
@@ -3985,7 +4001,7 @@ COMMAND_HANDLER(handle_profile_command)
 	}
 
 	write_gmon(samples, num_of_samples, CMD_ARGV[1],
-		   with_range, start_address, end_address, target);
+		   with_range, start_address, end_address, target, duration_ms);
 	command_print(CMD_CTX, "Wrote %s", CMD_ARGV[1]);
 
 	free(samples);

@@ -1339,6 +1339,15 @@ struct command_context *command_init(const char *startup_tcl, Jim_Interp *interp
 	return context;
 }
 
+void command_exit(struct command_context *context)
+{
+	if (!context)
+		return;
+
+	Jim_FreeInterp(context->interp);
+	command_done(context);
+}
+
 int command_context_mode(struct command_context *cmd_ctx, enum command_mode mode)
 {
 	if (!cmd_ctx)
@@ -1456,8 +1465,8 @@ COMMAND_HELPER(handle_command_parse_bool, bool *out, const char *label)
 				LOG_ERROR("%s: argument '%s' is not valid", CMD_NAME, in);
 				return ERROR_COMMAND_SYNTAX_ERROR;
 			}
-			/* fall through */
 		}
+			/* fallthrough */
 		case 0:
 			LOG_INFO("%s is %s", label, *out ? "enabled" : "disabled");
 			break;

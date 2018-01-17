@@ -855,6 +855,7 @@ COMMAND_HANDLER(ftdi_handle_set_signal_command)
 			ftdi_set_signal(sig, *CMD_ARGV[1]);
 			break;
 		}
+		/* fallthrough */
 	default:
 		LOG_ERROR("unknown signal level '%s', use 0, 1 or z", CMD_ARGV[1]);
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1063,8 +1064,19 @@ static int ftdi_swd_init(void)
 static void ftdi_swd_swdio_en(bool enable)
 {
 	struct signal *oe = find_signal_by_name("SWDIO_OE");
-	if (oe)
-		ftdi_set_signal(oe, enable ? '1' : '0');
+	if (oe) {
+		if (oe->data_mask)
+			ftdi_set_signal(oe, enable ? '1' : '0');
+		else {
+			/* Sets TDI/DO pin (pin 2) to input during rx when both pins are connected
+			   to SWDIO */
+			if (enable)
+				direction |= jtag_direction_init & 0x0002U;
+			else
+				direction &= ~0x0002U;
+			mpsse_set_data_bits_low_byte(mpsse_ctx, output & 0xff, direction & 0xff);
+		}
+	}
 }
 
 /**
@@ -1074,12 +1086,12 @@ static void ftdi_swd_swdio_en(bool enable)
  */
 static int ftdi_swd_run_queue(void)
 {
-	LOG_DEBUG("Executing %zu queued transactions", swd_cmd_queue_length);
+	LOG_DEBUG_IO("Executing %zu queued transactions", swd_cmd_queue_length);
 	int retval;
 	struct signal *led = find_signal_by_name("LED");
 
 	if (queued_retval != ERROR_OK) {
-		LOG_DEBUG("Skipping due to previous errors: %d", queued_retval);
+		LOG_DEBUG_IO("Skipping due to previous errors: %d", queued_retval);
 		goto skip;
 	}
 
@@ -1100,7 +1112,7 @@ static int ftdi_swd_run_queue(void)
 	for (size_t i = 0; i < swd_cmd_queue_length; i++) {
 		int ack = buf_get_u32(swd_cmd_queue[i].trn_ack_data_parity_trn, 1, 3);
 
-		LOG_DEBUG("%s %s %s reg %X = %08"PRIx32,
+		LOG_DEBUG_IO("%s %s %s reg %X = %08"PRIx32,
 				ack == SWD_ACK_OK ? "OK" : ack == SWD_ACK_WAIT ? "WAIT" : ack == SWD_ACK_FAULT ? "FAULT" : "JUNK",
 				swd_cmd_queue[i].cmd & SWD_CMD_APnDP ? "AP" : "DP",
 				swd_cmd_queue[i].cmd & SWD_CMD_RnW ? "read" : "write",
@@ -1217,14 +1229,17 @@ static int ftdi_swd_switch_seq(enum swd_special_seq seq)
 	switch (seq) {
 	case LINE_RESET:
 		LOG_DEBUG("SWD line reset");
+		ftdi_swd_swdio_en(true);
 		mpsse_clock_data_out(mpsse_ctx, swd_seq_line_reset, 0, swd_seq_line_reset_len, SWD_MODE);
 		break;
 	case JTAG_TO_SWD:
 		LOG_DEBUG("JTAG-to-SWD");
+		ftdi_swd_swdio_en(true);
 		mpsse_clock_data_out(mpsse_ctx, swd_seq_jtag_to_swd, 0, swd_seq_jtag_to_swd_len, SWD_MODE);
 		break;
 	case SWD_TO_JTAG:
 		LOG_DEBUG("SWD-to-JTAG");
+		ftdi_swd_swdio_en(true);
 		mpsse_clock_data_out(mpsse_ctx, swd_seq_swd_to_jtag, 0, swd_seq_swd_to_jtag_len, SWD_MODE);
 		break;
 	default:

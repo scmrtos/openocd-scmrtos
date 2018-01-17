@@ -595,6 +595,9 @@ produced, PDF schematics are easily found and it is easy to make.
 @item @b{bcm2835gpio}
 @* A BCM2835-based board (e.g. Raspberry Pi) using the GPIO pins of the expansion header.
 
+@item @b{imx_gpio}
+@* A NXP i.MX-based board (e.g. Wandboard) using the GPIO pins (should work on any i.MX processor).
+
 @item @b{jtag_vpi}
 @* A JTAG driver acting as a client for the JTAG VPI server interface.
 @* Link: @url{http://github.com/fjullien/jtag_vpi}
@@ -679,7 +682,8 @@ bash$ openocd --help
 --version    | -v       display OpenOCD version
 --file       | -f       use configuration file <name>
 --search     | -s       dir to search for config files and scripts
---debug      | -d       set debug level <0-3>
+--debug      | -d       set debug level to 3
+             | -d<n>    set debug level to <level>
 --log_output | -l       redirect log output to file <name>
 --command    | -c       run <command>
 @end verbatim
@@ -2742,6 +2746,62 @@ As a configuration command, it can be used only before 'init'.
 @end deffn
 @end deffn
 
+@deffn {Interface Driver} {kitprog}
+This driver is for Cypress Semiconductor's KitProg adapters. The KitProg is an
+SWD-only adapter that is designed to be used with Cypress's PSoC and PRoC device
+families, but it is possible to use it with some other devices. If you are using
+this adapter with a PSoC or a PRoC, you may need to add
+@command{kitprog_init_acquire_psoc} or @command{kitprog acquire_psoc} to your
+configuration script.
+
+Note that this driver is for the proprietary KitProg protocol, not the CMSIS-DAP
+mode introduced in firmware 2.14. If the KitProg is in CMSIS-DAP mode, it cannot
+be used with this driver, and must either be used with the cmsis-dap driver or
+switched back to KitProg mode. See the Cypress KitProg User Guide for
+instructions on how to switch KitProg modes.
+
+Known limitations:
+@itemize @bullet
+@item The frequency of SWCLK cannot be configured, and varies between 1.6 MHz
+and 2.7 MHz.
+@item For firmware versions below 2.14, "JTAG to SWD" sequences are replaced by
+"SWD line reset" in the driver. This is for two reasons. First, the KitProg does
+not support sending arbitrary SWD sequences, and only firmware 2.14 and later
+implement both "JTAG to SWD" and "SWD line reset" in firmware. Earlier firmware
+versions only implement "SWD line reset". Second, due to a firmware quirk, an
+SWD sequence must be sent after every target reset in order to re-establish
+communications with the target.
+@item Due in part to the limitation above, KitProg devices with firmware below
+version 2.14 will need to use @command{kitprog_init_acquire_psoc} in order to
+communicate with PSoC 5LP devices. This is because, assuming debug is not
+disabled on the PSoC, the PSoC 5LP needs its JTAG interface switched to SWD
+mode before communication can begin, but prior to firmware 2.14, "JTAG to SWD"
+could only be sent with an acquisition sequence.
+@end itemize
+
+@deffn {Config Command} {kitprog_init_acquire_psoc}
+Indicate that a PSoC acquisition sequence needs to be run during adapter init.
+Please be aware that the acquisition sequence hard-resets the target.
+@end deffn
+
+@deffn {Config Command} {kitprog_serial} serial
+Select a KitProg device by its @var{serial}. If left unspecified, the first
+device detected by OpenOCD will be used.
+@end deffn
+
+@deffn {Command} {kitprog acquire_psoc}
+Run a PSoC acquisition sequence immediately. Typically, this should not be used
+outside of the target-specific configuration scripts since it hard-resets the
+target as a side-effect.
+This is necessary for "reset halt" on some PSoC 4 series devices.
+@end deffn
+
+@deffn {Command} {kitprog info}
+Display various adapter information, such as the hardware version, firmware
+version, and target voltage.
+@end deffn
+@end deffn
+
 @deffn {Interface Driver} {parport}
 Supports PC parallel port bit-banging cables:
 Wigglers, PLD download cable, and more.
@@ -2888,8 +2948,8 @@ Specifies the serial number of the adapter.
 Specifies the adapter layout to use.
 @end deffn
 
-@deffn {Config Command} {hla_vid_pid} vid pid
-The vendor ID and product ID of the device.
+@deffn {Config Command} {hla_vid_pid} [vid pid]+
+Pairs of vendor IDs and product IDs of the device.
 @end deffn
 
 @deffn {Command} {hla_command} command
@@ -2935,6 +2995,18 @@ See @file{interface/raspberrypi-native.cfg} for a sample config and
 pinout.
 
 @end deffn
+
+@deffn {Interface Driver} {imx_gpio}
+i.MX SoC is present in many community boards. Wandboard is an example
+of the one which is most popular.
+
+This driver is mostly the same as bcm2835gpio.
+
+See @file{interface/imx-native.cfg} for a sample config and
+pinout.
+
+@end deffn
+
 
 @deffn {Interface Driver} {openjtag}
 OpenJTAG compatible USB adapter.
@@ -4431,12 +4503,6 @@ and (if the target is using it) after SRST has been
 released on the scan chain.
 @item @b{reset-end}
 @* Issued as the final step in @command{reset} processing.
-@ignore
-@item @b{reset-halt-post}
-@* Currently not used
-@item @b{reset-halt-pre}
-@* Currently not used
-@end ignore
 @item @b{reset-init}
 @* Used by @b{reset init} command for board-specific initialization.
 This event fires after @emph{reset-deassert-post}.
@@ -4453,12 +4519,6 @@ before @command{reset_init} is called.
 This is the most robust place to use @command{jtag_rclk}
 or @command{adapter_khz} to switch to a low JTAG clock rate,
 when reset disables PLLs needed to use a fast clock.
-@ignore
-@item @b{reset-wait-pos}
-@* Currently not used
-@item @b{reset-wait-pre}
-@* Currently not used
-@end ignore
 @item @b{resume-start}
 @* Before any target is resumed
 @item @b{resume-end}
@@ -4644,21 +4704,25 @@ each block, and the specified length must stay within that bank.
 @end deffn
 @comment no current checks for errors if fill blocks touch multiple banks!
 
-@deffn Command {flash write_bank} num filename offset
+@deffn Command {flash write_bank} num filename [offset]
 Write the binary @file{filename} to flash bank @var{num},
-starting at @var{offset} bytes from the beginning of the bank.
+starting at @var{offset} bytes from the beginning of the bank. If @var{offset}
+is omitted, start at the beginning of the flash bank.
 The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 
-@deffn Command {flash read_bank} num filename offset length
+@deffn Command {flash read_bank} num filename [offset [length]]
 Read @var{length} bytes from the flash bank @var{num} starting at @var{offset}
-and write the contents to the binary @file{filename}.
+and write the contents to the binary @file{filename}. If @var{offset} is
+omitted, start at the beginning of the flash bank. If @var{length} is omitted,
+read the remaining bytes from the flash bank.
 The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 
-@deffn Command {flash verify_bank} num filename offset
+@deffn Command {flash verify_bank} num filename [offset]
 Compare the contents of the binary file @var{filename} with the contents of the
-flash @var{num} starting at @var{offset}. Fails if the contents do not match.
+flash bank @var{num} starting at @var{offset}. If @var{offset} is omitted,
+start at the beginning of the flash bank. Fail if the contents do not match.
 The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 
@@ -4849,17 +4913,60 @@ functionality is available through the @command{flash write_bank},
 @item @var{ir} ... is loaded into the JTAG IR to map the flash as the JTAG DR.
 For the bitstreams generated from @file{xilinx_bscan_spi.py} this is the
 @var{USER1} instruction.
-@item @var{dr_length} ... is the length of the DR register. This will be 1 for
-@file{xilinx_bscan_spi.py} bitstreams and most other cases.
 @end itemize
 
 @example
 target create $_TARGETNAME testee -chain-position $_CHIPNAME.fpga
 set _XILINX_USER1 0x02
-set _DR_LENGTH 1
 flash bank $_FLASHNAME spi 0x0 0 0 0 \
-           $_TARGETNAME $_XILINX_USER1 $_DR_LENGTH
+           $_TARGETNAME $_XILINX_USER1
 @end example
+@end deffn
+
+@deffn {Flash Driver} xcf
+@cindex Xilinx Platform flash driver
+@cindex xcf
+Xilinx FPGAs can be configured from specialized flash ICs named Platform Flash.
+It is (almost) regular NOR flash with erase sectors, program pages, etc. The
+only difference is special registers controlling its FPGA specific behavior.
+They must be properly configured for successful FPGA loading using
+additional @var{xcf} driver command:
+
+@deffn Command {xcf ccb} <bank_id>
+command accepts additional parameters:
+@itemize
+@item @var{external|internal} ... selects clock source.
+@item @var{serial|parallel} ... selects serial or parallel data bus mode.
+@item @var{slave|master} ... selects slave of master mode for flash device.
+@item @var{40|20} ... selects clock frequency in MHz for internal clock
+in master mode.
+@end itemize
+@example
+xcf ccb 0 external parallel slave 40
+@end example
+All of them must be specified even if clock frequency is pointless
+in slave mode. If only bank id specified than command prints current
+CCB register value. Note: there is no need to write this register
+every time you erase/program data sectors because it stores in
+dedicated sector.
+@end deffn
+
+@deffn Command {xcf configure} <bank_id>
+Initiates FPGA loading procedure. Useful if your board has no "configure"
+button.
+@example
+xcf configure 0
+@end example
+@end deffn
+
+Additional driver notes:
+@itemize
+@item Only single revision supported.
+@item Driver automatically detects need of bit reverse, but
+only "bin" (raw binary, do not confuse it with "bit") and "mcs"
+(Intel hex) file types supported.
+@item For additional info check xapp972.pdf and ug380.pdf.
+@end itemize
 @end deffn
 
 @deffn {Flash Driver} lpcspifi
@@ -4923,6 +5030,45 @@ hardcoded in the OpenOCD sources.
 
 @example
 flash bank $_FLASHNAME mrvlqspi 0x0 0 0 0 $_TARGETNAME 0x46010000
+@end example
+
+@end deffn
+
+@deffn {Flash Driver} ath79
+@cindex Atheros ath79 SPI driver
+@cindex ath79
+Members of ATH79 SoC family from Atheros include a SPI interface with 3
+chip selects.
+On reset a SPI flash connected to the first chip select (CS0) is made
+directly read-accessible in the CPU address space (up to 16MBytes)
+and is usually used to store the bootloader and operating system.
+Normal OpenOCD commands like @command{mdw} can be used to display
+the flash content while it is in memory-mapped mode (only the first
+4MBytes are accessible without additional configuration on reset).
+
+The setup command only requires the @var{base} parameter in order
+to identify the memory bank. The actual value for the base address
+is not otherwise used by the driver. However the mapping is passed
+to gdb. Thus for the memory mapped flash (chipselect CS0) the base
+address should be the actual memory mapped base address. For unmapped
+chipselects (CS1 and CS2) care should be taken to use a base address
+that does not overlap with real memory regions.
+Additional information, like flash size, are detected automatically.
+An optional additional parameter sets the chipselect for the bank,
+with the default CS0.
+CS1 and CS2 require additional GPIO setup before they can be used
+since the alternate function must be enabled on the GPIO pin
+CS1/CS2 is routed to on the given SoC.
+
+@example
+flash bank $_FLASHNAME ath79 0 0 0 0 $_TARGETNAME
+
+# When using multiple chipselects the base should be different for each,
+# otherwise the write_image command is not able to distinguish the
+# banks.
+flash bank flash0 ath79 0x00000000 0 0 0 $_TARGETNAME cs0
+flash bank flash1 ath79 0x10000000 0 0 0 $_TARGETNAME cs1
+flash bank flash2 ath79 0x20000000 0 0 0 $_TARGETNAME cs2
 @end example
 
 @end deffn
@@ -5250,14 +5396,27 @@ nor is Chip Erase (only Sector Erase is implemented).}
 
 @deffn {Flash Driver} kinetis
 @cindex kinetis
-Kx and KLx members of the Kinetis microcontroller family from Freescale include
+Kx, KLx, KVx and KE1x members of the Kinetis microcontroller family
+from NXP (former Freescale) include
 internal flash and use ARM Cortex-M0+ or M4 cores. The driver automatically
 recognizes flash size and a number of flash banks (1-4) using the chip
 identification register, and autoconfigures itself.
+Use kinetis_ke driver for KE0x devices.
+
+The @var{kinetis} driver defines option:
+@itemize
+@item -sim-base @var{addr} ... base of System Integration Module where chip identification resides. Driver tries two known locations if option is omitted.
+@end itemize
 
 @example
 flash bank $_FLASHNAME kinetis 0 0 0 0 $_TARGETNAME
 @end example
+
+@deffn Command {kinetis create_banks}
+Configuration command enables automatic creation of additional flash banks
+based on real flash layout of device. Banks are created during device probe.
+Use 'flash probe 0' to force probe.
+@end deffn
 
 @deffn Command {kinetis fcf_source} [protection|write]
 Select what source is used when writing to a Flash Configuration Field.
@@ -5335,10 +5494,11 @@ Command disables watchdog timer.
 
 @deffn {Flash Driver} kinetis_ke
 @cindex kinetis_ke
-KE members of the Kinetis microcontroller family from Freescale include
+KE0x members of the Kinetis microcontroller family from Freescale include
 internal flash and use ARM Cortex-M0+. The driver automatically recognizes
-the KE family and sub-family using the chip identification register, and
+the KE0x sub-family using the chip identification register, and
 autoconfigures itself.
+Use kinetis (not kinetis_ke) driver for KE1x devices.
 
 @example
 flash bank $_FLASHNAME kinetis_ke 0 0 0 0 $_TARGETNAME
@@ -5638,17 +5798,19 @@ Show information about flash driver.
 
 @end deffn
 
-@deffn {Flash Driver} nrf51
+@deffn {Flash Driver} nrf5
 All members of the nRF51 microcontroller families from Nordic Semiconductor
 include internal flash and use ARM Cortex-M0 core.
+Also, the nRF52832 microcontroller from Nordic Semiconductor, which include
+internal flash and use an ARM Cortex-M4F core.
 
 @example
-flash bank $_FLASHNAME nrf51 0 0x00000000 0 0 $_TARGETNAME
+flash bank $_FLASHNAME nrf5 0 0x00000000 0 0 $_TARGETNAME
 @end example
 
-Some nrf51-specific commands are defined:
+Some nrf5-specific commands are defined:
 
-@deffn Command {nrf51 mass_erase}
+@deffn Command {nrf5 mass_erase}
 Erases the contents of the code memory and user information
 configuration registers as well. It must be noted that this command
 works only for chips that do not have factory pre-programmed region 0
@@ -5757,9 +5919,6 @@ All members of the Stellaris LM3Sxxx, LM4x and Tiva C microcontroller
 families from Texas Instruments include internal flash. The driver
 automatically recognizes a number of these chips using the chip
 identification register, and autoconfigures itself.
-@footnote{Currently there is a @command{stellaris mass_erase} command.
-That seems pointless since the same effect can be had using the
-standard @command{flash erase_address} command.}
 
 @example
 flash bank $_FLASHNAME stellaris 0 0 0 0 $_TARGETNAME
@@ -5805,11 +5964,7 @@ as per the following example.
 flash bank $_FLASHNAME stm32f1x 0x08080000 0 0 0 $_TARGETNAME
 @end example
 
-Some stm32f1x-specific commands
-@footnote{Currently there is a @command{stm32f1x mass_erase} command.
-That seems pointless since the same effect can be had using the
-standard @command{flash erase_address} command.}
-are defined:
+Some stm32f1x-specific commands are defined:
 
 @deffn Command {stm32f1x lock} num
 Locks the entire stm32 device.
@@ -5818,6 +5973,11 @@ The @var{num} parameter is a value shown by @command{flash banks}.
 
 @deffn Command {stm32f1x unlock} num
 Unlocks the entire stm32 device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
+@deffn Command {stm32f1x mass_erase} num
+Mass erases the entire stm32f1x device.
 The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 
@@ -5839,6 +5999,10 @@ include internal flash and use ARM Cortex-M3/M4/M7 cores.
 The driver automatically recognizes a number of these chips using
 the chip identification register, and autoconfigures itself.
 
+@example
+flash bank $_FLASHNAME stm32f2x 0 0 0 0 $_TARGETNAME
+@end example
+
 Note that some devices have been found that have a flash size register that contains
 an invalid value, to workaround this issue you can override the probed value used by
 the flash driver.
@@ -5859,17 +6023,63 @@ Unlocks the entire stm32 device.
 The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 
+@deffn Command {stm32f2x mass_erase} num
+Mass erases the entire stm32f2x device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
 @deffn Command {stm32f2x options_read} num
-Reads and displays user options and (where implemented) boot_addr0 and boot_addr1.
+Reads and displays user options and (where implemented) boot_addr0, boot_addr1, optcr2.
 The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 
 @deffn Command {stm32f2x options_write} num user_options boot_addr0 boot_addr1
 Writes user options and (where implemented) boot_addr0 and boot_addr1 in raw format.
 Warning: The meaning of the various bits depends on the device, always check datasheet!
-The @var{num} parameter is a value shown by @command{flash banks}, user_options a
-12 bit value, consisting of bits 31-28 and 7-0 of FLASH_OPTCR, boot_addr0 and boot_addr1
-two halfwords (of FLASH_OPTCR1).
+The @var{num} parameter is a value shown by @command{flash banks}, @var{user_options} a
+12 bit value, consisting of bits 31-28 and 7-0 of FLASH_OPTCR, @var{boot_addr0} and
+@var{boot_addr1} two halfwords (of FLASH_OPTCR1).
+@end deffn
+
+@deffn Command {stm32f2x optcr2_write} num optcr2
+Writes FLASH_OPTCR2 options. Warning: Clearing PCROPi bits requires a full mass erase!
+The @var{num} parameter is a value shown by @command{flash banks}, @var{optcr2} a 32-bit word.
+@end deffn
+@end deffn
+
+@deffn {Flash Driver} stm32h7x
+All members of the STM32H7 microcontroller families from ST Microelectronics
+include internal flash and use ARM Cortex-M7 core.
+The driver automatically recognizes a number of these chips using
+the chip identification register, and autoconfigures itself.
+
+@example
+flash bank $_FLASHNAME stm32h7x 0 0 0 0 $_TARGETNAME
+@end example
+
+Note that some devices have been found that have a flash size register that contains
+an invalid value, to workaround this issue you can override the probed value used by
+the flash driver.
+
+@example
+flash bank $_FLASHNAME stm32h7x 0 0x20000 0 0 $_TARGETNAME
+@end example
+
+Some stm32h7x-specific commands are defined:
+
+@deffn Command {stm32h7x lock} num
+Locks the entire stm32 device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
+@deffn Command {stm32h7x unlock} num
+Unlocks the entire stm32 device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
+@deffn Command {stm32h7x mass_erase} num
+Mass erases the entire stm32h7x device.
+The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 @end deffn
 
@@ -5878,6 +6088,10 @@ All members of the STM32L microcontroller families from ST Microelectronics
 include internal flash and use ARM Cortex-M3 and Cortex-M0+ cores.
 The driver automatically recognizes a number of these chips using
 the chip identification register, and autoconfigures itself.
+
+@example
+flash bank $_FLASHNAME stm32lx 0 0 0 0 $_TARGETNAME
+@end example
 
 Note that some devices have been found that have a flash size register that contains
 an invalid value, to workaround this issue you can override the probed value used by
@@ -5891,10 +6105,56 @@ flash bank $_FLASHNAME stm32lx 0x08000000 0x20000 0 0 $_TARGETNAME
 
 Some stm32lx-specific commands are defined:
 
+@deffn Command {stm32lx lock} num
+Locks the entire stm32 device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
+@deffn Command {stm32lx unlock} num
+Unlocks the entire stm32 device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
 @deffn Command {stm32lx mass_erase} num
 Mass erases the entire stm32lx device (all flash banks and EEPROM
 data). This is the only way to unlock a protected flash (unless RDP
 Level is 2 which can't be unlocked at all).
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+@end deffn
+
+@deffn {Flash Driver} stm32l4x
+All members of the STM32L4 microcontroller families from ST Microelectronics
+include internal flash and use ARM Cortex-M4 cores.
+The driver automatically recognizes a number of these chips using
+the chip identification register, and autoconfigures itself.
+
+@example
+flash bank $_FLASHNAME stm32l4x 0 0 0 0 $_TARGETNAME
+@end example
+
+Note that some devices have been found that have a flash size register that contains
+an invalid value, to workaround this issue you can override the probed value used by
+the flash driver.
+
+@example
+flash bank $_FLASHNAME stm32l4x 0x08000000 0x40000 0 0 $_TARGETNAME
+@end example
+
+Some stm32l4x-specific commands are defined:
+
+@deffn Command {stm32l4x lock} num
+Locks the entire stm32 device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
+@deffn Command {stm32l4x unlock} num
+Unlocks the entire stm32 device.
+The @var{num} parameter is a value shown by @command{flash banks}.
+@end deffn
+
+@deffn Command {stm32l4x mass_erase} num
+Mass erases the entire stm32l4x device.
 The @var{num} parameter is a value shown by @command{flash banks}.
 @end deffn
 @end deffn
@@ -6721,12 +6981,13 @@ non-zero exit code to the parent process.
 @deffn Command debug_level [n]
 @cindex message level
 Display debug level.
-If @var{n} (from 0..3) is provided, then set it to that level.
+If @var{n} (from 0..4) is provided, then set it to that level.
 This affects the kind of messages sent to the server log.
 Level 0 is error messages only;
 level 1 adds warnings;
 level 2 adds informational messages;
-and level 3 adds debugging messages.
+level 3 adds debugging messages;
+and level 4 adds verbose low-level debug messages.
 The default is level 2, but that can be overridden on
 the command line along with the location of that log
 file (which is normally the server's standard output).
@@ -7467,6 +7728,20 @@ requests by using a special SVC instruction that is trapped at the
 Supervisor Call vector by OpenOCD.
 @end deffn
 
+@deffn Command {arm semihosting_cmdline} [@option{enable}|@option{disable}]
+@cindex ARM semihosting
+Set the command line to be passed to the debuggee.
+
+@example
+arm semihosting_cmdline argv0 argv1 argv2 ...
+@end example
+
+This option lets one set the command line arguments to be passed to
+the program. The first argument (argv0) is the program name in a
+standard C environment (argv[0]). Depending on the program (not much
+programs look at argv[0]), argv0 is ignored and can be any string.
+@end deffn
+
 @deffn Command {arm semihosting_fileio} [@option{enable}|@option{disable}]
 @cindex ARM semihosting
 Display status of semihosting fileio, after optionally changing that
@@ -8143,6 +8418,11 @@ halting or resuming of all cores in the group. The command @code{target smp} def
 group. With SMP handling disabled, all targets need to be treated individually.
 @end deffn
 
+@deffn Command {aarch64 maskisr} [@option{on}|@option{off}]
+Selects whether interrupts will be processed when single stepping. The default configuration is
+@option{on}.
+@end deffn
+
 @section Intel Architecture
 
 Intel Quark X10xx is the first product in the Quark family of SoCs. It is an IA-32
@@ -8547,11 +8827,27 @@ way to represent JTAG test patterns in text files.
 In a debug session using JTAG for its transport protocol,
 OpenOCD supports running such test files.
 
-@deffn Command {svf} filename [@option{quiet}]
+@deffn Command {svf} @file{filename} [@option{-tap @var{tapname}}] [@option{[-]quiet}] @
+                     [@option{[-]nil}] [@option{[-]progress}] [@option{[-]ignore_error}]
 This issues a JTAG reset (Test-Logic-Reset) and then
 runs the SVF script from @file{filename}.
-Unless the @option{quiet} option is specified,
-each command is logged before it is executed.
+
+Arguments can be specified in any order; the optional dash doesn't
+affect their semantics.
+
+Command options:
+@itemize @minus
+@item @option{-tap @var{tapname}} ignore IR and DR headers and footers
+specified by the SVF file with HIR, TIR, HDR and TDR commands;
+instead, calculate them automatically according to the current JTAG
+chain configuration, targetting @var{tapname};
+@item @option{[-]quiet} do not log every command before execution;
+@item @option{[-]nil} ``dry run'', i.e., do not perform any operations
+on the real interface;
+@item @option{[-]progress} enable progress indication;
+@item @option{[-]ignore_error} continue execution despite TDO check
+errors.
+@end itemize
 @end deffn
 
 @section XSVF: Xilinx Serial Vector Format

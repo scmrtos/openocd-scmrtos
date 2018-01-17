@@ -125,7 +125,7 @@ enum target_register_class {
 /* target_type.h contains the full definition of struct target_type */
 struct target {
 	struct target_type *type;			/* target type definition (name, access functions) */
-	const char *cmd_name;				/* tcl Name of target */
+	char *cmd_name;				/* tcl Name of target */
 	int target_number;					/* DO NOT USE!  field to be removed in 2010 */
 	struct jtag_tap *tap;				/* where on the jtag chain is this */
 	int32_t coreid;						/* which device on the TAP? */
@@ -253,10 +253,6 @@ enum target_event {
 	TARGET_EVENT_RESET_ASSERT_POST,
 	TARGET_EVENT_RESET_DEASSERT_PRE,
 	TARGET_EVENT_RESET_DEASSERT_POST,
-	TARGET_EVENT_RESET_HALT_PRE,
-	TARGET_EVENT_RESET_HALT_POST,
-	TARGET_EVENT_RESET_WAIT_PRE,
-	TARGET_EVENT_RESET_WAIT_POST,
 	TARGET_EVENT_RESET_INIT,
 	TARGET_EVENT_RESET_END,
 

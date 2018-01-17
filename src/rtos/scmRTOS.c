@@ -37,7 +37,7 @@
 #include "rtos_scmRTOS_stackings.h"
           
 //------------------------------------------------------------------------------
-static int scmRTOS_detect_rtos               (struct target *target);
+static bool scmRTOS_detect_rtos               (struct target *target);
 static int scmRTOS_create                    (struct target *target);
 static int scmRTOS_update_proc_info          (struct rtos *rtos);
 static int scmRTOS_get_proc_reg_list         (struct rtos *rtos, int64_t thread_id, char **hex_reg_list);
@@ -244,16 +244,16 @@ static const int SYMBOL_COUNT = sizeof(scmRTOS_symbols)/sizeof(scmRTOS_symbols[0
 //    Interface
 //
 //------------------------------------------------------------------------------
-int scmRTOS_detect_rtos(struct target *target)
+bool scmRTOS_detect_rtos(struct target *target)
 {
     if( target->rtos->symbols != NULL ) 
     {
         if( target->rtos->symbols[SID_DEBUG_INFO].address    != 0 &&
             target->rtos->symbols[SID_KERNEL].address        != 0 &&
             target->rtos->symbols[SID_PROCESS_TABLE].address != 0 )
-            return 1;  // looks like scmRTOS
+            return true;  // looks like scmRTOS
     }
-    return 0;
+    return false;
 }
 //------------------------------------------------------------------------------
 int scmRTOS_create(struct target *target)
