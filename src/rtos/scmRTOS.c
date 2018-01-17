@@ -564,8 +564,8 @@ int get_processes_data(struct rtos  *rtos,
         {
             addr = value;
             size = PROCESS_NAME_LEN;
-            os_processes[i].Name[PROCESS_NAME_LEN-1] = '\0';
             res  = target_read_buffer(rtos->target, addr, size, (uint8_t*)os_processes[i].Name);
+            os_processes[i].Name[PROCESS_NAME_LEN-1] = '\0';
             if(res != ERROR_OK)
                 return res;
         }
