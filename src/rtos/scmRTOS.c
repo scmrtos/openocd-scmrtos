@@ -661,18 +661,15 @@ int renew_proc_info(struct rtos  *rtos,
 
         os_processes[i].Ready = os_kernel->ReadyProcessMap & PrioMask;
 
-        char *info_str     = "Preempted";
+        char const *info_str = "Suspended";
 
-        if(os_processes[i].Ready)
+        if( os_kernel->CurProcPriority == os_processes[i].Priority )
         {
-            if( os_kernel->CurProcPriority == os_processes[i].Priority )
-            {
-                rtos->current_thread = os_processes[i].Priority + 1;
-                info_str             = "Active";
-            }
-            else
-                info_str      = "Suspended";
+            rtos->current_thread = os_processes[i].Priority + 1;
+            info_str = "Active";
         }
+        else if(os_processes[i].Ready)
+            info_str = "Preempted";
 
         params->ProcessTable[os_processes[i].Priority] = ProcAddr;
         
