@@ -28,6 +28,7 @@
 #include "target_type.h"
 #include "armv8_opcodes.h"
 #include "armv8_cache.h"
+#include "arm_semihosting.h"
 #include <helper/time_support.h>
 
 enum restart_mode {
@@ -38,6 +39,11 @@ enum restart_mode {
 enum halt_mode {
 	HALT_LAZY,
 	HALT_SYNC,
+};
+
+struct aarch64_private_config {
+	struct adiv5_private_config adiv5_config;
+	struct arm_cti *cti;
 };
 
 static int aarch64_poll(struct target *target);
@@ -161,8 +167,16 @@ static int aarch64_mmu_modify(struct target *target, int enable)
 	case ARMV8_64_EL3T:
 		instr = ARMV8_MSR_GP(SYSTEM_SCTLR_EL3, 0);
 		break;
+
+	case ARM_MODE_SVC:
+	case ARM_MODE_ABT:
+	case ARM_MODE_FIQ:
+	case ARM_MODE_IRQ:
+		instr = ARMV4_5_MCR(15, 0, 0, 1, 0, 0);
+		break;
+
 	default:
-		LOG_DEBUG("unknown cpu state 0x%x" PRIx32, armv8->arm.core_state);
+		LOG_DEBUG("unknown cpu state 0x%" PRIx32, armv8->arm.core_mode);
 		break;
 	}
 
@@ -444,7 +458,7 @@ static int update_halt_gdb(struct target *target, enum target_debug_reason debug
 	struct target *curr;
 
 	if (debug_reason == DBG_REASON_NOTHALTED) {
-		LOG_INFO("Halting remaining targets in SMP group");
+		LOG_DEBUG("Halting remaining targets in SMP group");
 		aarch64_halt_smp(target, true);
 	}
 
@@ -509,6 +523,9 @@ static int aarch64_poll(struct target *target)
 			if (target->smp)
 				update_halt_gdb(target, debug_reason);
 
+			if (arm_semihosting(target, &retval) != 0)
+				return retval;
+
 			switch (prev_target_state) {
 			case TARGET_RUNNING:
 			case TARGET_UNKNOWN:
@@ -530,6 +547,9 @@ static int aarch64_poll(struct target *target)
 
 static int aarch64_halt(struct target *target)
 {
+	struct armv8_common *armv8 = target_to_armv8(target);
+	armv8->last_run_control_op = ARMV8_RUNCONTROL_HALT;
+
 	if (target->smp)
 		return aarch64_halt_smp(target, false);
 
@@ -634,9 +654,11 @@ static int aarch64_prepare_restart_one(struct target *target)
 				armv8->debug_base + CPUV8_DBG_DSCR, dscr);
 	}
 
-	/* clear sticky bits in PRSR, SDR is now 0 */
-	retval = mem_ap_read_atomic_u32(armv8->debug_ap,
-			armv8->debug_base + CPUV8_DBG_PRSR, &tmp);
+	if (retval == ERROR_OK) {
+		/* clear sticky bits in PRSR, SDR is now 0 */
+		retval = mem_ap_read_atomic_u32(armv8->debug_ap,
+				armv8->debug_base + CPUV8_DBG_PRSR, &tmp);
+	}
 
 	return retval;
 }
@@ -815,6 +837,9 @@ static int aarch64_resume(struct target *target, int current,
 {
 	int retval = 0;
 	uint64_t addr = address;
+
+	struct armv8_common *armv8 = target_to_armv8(target);
+	armv8->last_run_control_op = ARMV8_RUNCONTROL_RESUME;
 
 	if (target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
@@ -1054,6 +1079,8 @@ static int aarch64_step(struct target *target, int current, target_addr_t addres
 	int retval;
 	uint32_t edecr;
 
+	armv8->last_run_control_op = ARMV8_RUNCONTROL_STEP;
+
 	if (target->state != TARGET_HALTED) {
 		LOG_WARNING("target not halted");
 		return ERROR_TARGET_NOT_HALTED;
@@ -1076,7 +1103,7 @@ static int aarch64_step(struct target *target, int current, target_addr_t addres
 	if (retval != ERROR_OK)
 		return retval;
 
-	if (target->smp && !handle_breakpoints) {
+	if (target->smp && (current == 1)) {
 		/*
 		 * isolate current target so that it doesn't get resumed
 		 * together with the others
@@ -1667,17 +1694,19 @@ static int aarch64_deassert_reset(struct target *target)
 	if (retval != ERROR_OK)
 		return retval;
 
+	retval = aarch64_init_debug_access(target);
+	if (retval != ERROR_OK)
+		return retval;
+
 	if (target->reset_halt) {
 		if (target->state != TARGET_HALTED) {
 			LOG_WARNING("%s: ran after reset and before halt ...",
 				target_name(target));
 			retval = target_halt(target);
-			if (retval != ERROR_OK)
-				return retval;
 		}
 	}
 
-	return aarch64_init_debug_access(target);
+	return retval;
 }
 
 static int aarch64_write_cpu_memory_slow(struct target *target,
@@ -1807,6 +1836,8 @@ static int aarch64_write_cpu_memory(struct target *target,
 	dscr = (dscr & ~DSCR_MA);
 	retval = mem_ap_write_atomic_u32(armv8->debug_ap,
 			armv8->debug_base + CPUV8_DBG_DSCR, dscr);
+	if (retval != ERROR_OK)
+		return retval;
 
 	if (arm->core_state == ARM_STATE_AARCH64) {
 		/* Write X0 with value 'address' using write procedure */
@@ -1818,9 +1849,12 @@ static int aarch64_write_cpu_memory(struct target *target,
 		/* Write R0 with value 'address' using write procedure */
 		/* Step 1.a+b - Write the address for read access into DBGDTRRX */
 		/* Step 1.c   - Copy value from DTR to R0 using instruction mrc DBGDTRTXint, r0 */
-		dpm->instr_write_data_dcc(dpm,
+		retval = dpm->instr_write_data_dcc(dpm,
 				ARMV4_5_MRC(14, 0, 0, 0, 5, 0), address);
 	}
+
+	if (retval != ERROR_OK)
+		return retval;
 
 	if (size == 4 && (address % 4) == 0)
 		retval = aarch64_write_cpu_memory_fast(target, count, buffer, &dscr);
@@ -1846,7 +1880,7 @@ static int aarch64_write_cpu_memory(struct target *target,
 	if (dscr & (DSCR_ERR | DSCR_SYS_ERROR_PEND)) {
 		/* Abort occurred - clear it and exit */
 		LOG_ERROR("abort occurred - dscr = 0x%08" PRIx32, dscr);
-		armv8_dpm_handle_exception(dpm);
+		armv8_dpm_handle_exception(dpm, true);
 		return ERROR_FAIL;
 	}
 
@@ -1933,13 +1967,21 @@ static int aarch64_read_cpu_memory_fast(struct target *target,
 		retval = dpm->instr_execute(dpm, ARMV4_5_MCR(14, 0, 0, 0, 5, 0));
 	}
 
+	if (retval != ERROR_OK)
+		return retval;
+
 	/* Step 1.e - Change DCC to memory mode */
 	*dscr |= DSCR_MA;
 	retval =  mem_ap_write_atomic_u32(armv8->debug_ap,
 			armv8->debug_base + CPUV8_DBG_DSCR, *dscr);
+	if (retval != ERROR_OK)
+		return retval;
+
 	/* Step 1.f - read DBGDTRTX and discard the value */
 	retval = mem_ap_read_atomic_u32(armv8->debug_ap,
 			armv8->debug_base + CPUV8_DBG_DTRTX, &value);
+	if (retval != ERROR_OK)
+		return retval;
 
 	count--;
 	/* Read the data - Each read of the DTRTX register causes the instruction to be reissued
@@ -2003,27 +2045,34 @@ static int aarch64_read_cpu_memory(struct target *target,
 	/* Read DSCR */
 	retval = mem_ap_read_atomic_u32(armv8->debug_ap,
 				armv8->debug_base + CPUV8_DBG_DSCR, &dscr);
+	if (retval != ERROR_OK)
+		return retval;
 
 	/* This algorithm comes from DDI0487A.g, chapter J9.1 */
 
 	/* Set Normal access mode  */
 	dscr &= ~DSCR_MA;
-	retval +=  mem_ap_write_atomic_u32(armv8->debug_ap,
+	retval =  mem_ap_write_atomic_u32(armv8->debug_ap,
 			armv8->debug_base + CPUV8_DBG_DSCR, dscr);
+	if (retval != ERROR_OK)
+		return retval;
 
 	if (arm->core_state == ARM_STATE_AARCH64) {
 		/* Write X0 with value 'address' using write procedure */
 		/* Step 1.a+b - Write the address for read access into DBGDTR_EL0 */
 		/* Step 1.c   - Copy value from DTR to R0 using instruction mrs DBGDTR_EL0, x0 */
-		retval += dpm->instr_write_data_dcc_64(dpm,
+		retval = dpm->instr_write_data_dcc_64(dpm,
 				ARMV8_MRS(SYSTEM_DBG_DBGDTR_EL0, 0), address);
 	} else {
 		/* Write R0 with value 'address' using write procedure */
 		/* Step 1.a+b - Write the address for read access into DBGDTRRXint */
 		/* Step 1.c   - Copy value from DTR to R0 using instruction mrc DBGDTRTXint, r0 */
-		retval += dpm->instr_write_data_dcc(dpm,
+		retval = dpm->instr_write_data_dcc(dpm,
 				ARMV4_5_MRC(14, 0, 0, 0, 5, 0), address);
 	}
+
+	if (retval != ERROR_OK)
+		return retval;
 
 	if (size == 4 && (address % 4) == 0)
 		retval = aarch64_read_cpu_memory_fast(target, count, buffer, &dscr);
@@ -2050,7 +2099,7 @@ static int aarch64_read_cpu_memory(struct target *target,
 	if (dscr & (DSCR_ERR | DSCR_SYS_ERROR_PEND)) {
 		/* Abort occurred - clear it and exit */
 		LOG_ERROR("abort occurred - dscr = 0x%08" PRIx32, dscr);
-		armv8_dpm_handle_exception(dpm);
+		armv8_dpm_handle_exception(dpm, true);
 		return ERROR_FAIL;
 	}
 
@@ -2168,17 +2217,13 @@ static int aarch64_examine_first(struct target *target)
 	struct aarch64_common *aarch64 = target_to_aarch64(target);
 	struct armv8_common *armv8 = &aarch64->armv8_common;
 	struct adiv5_dap *swjdp = armv8->arm.dap;
-	uint32_t cti_base;
+	struct aarch64_private_config *pc;
 	int i;
 	int retval = ERROR_OK;
 	uint64_t debug, ttypr;
 	uint32_t cpuid;
 	uint32_t tmp0, tmp1, tmp2, tmp3;
 	debug = ttypr = cpuid = 0;
-
-	retval = dap_dp_init(swjdp);
-	if (retval != ERROR_OK)
-		return retval;
 
 	/* Search for the APB-AB - it is needed for access to debug registers */
 	retval = dap_find_ap(swjdp, AP_TYPE_APB_AP, &armv8->debug_ap);
@@ -2259,16 +2304,14 @@ static int aarch64_examine_first(struct target *target)
 	LOG_DEBUG("ttypr = 0x%08" PRIx64, ttypr);
 	LOG_DEBUG("debug = 0x%08" PRIx64, debug);
 
-	if (target->ctibase == 0) {
-		/* assume a v8 rom table layout */
-		cti_base = armv8->debug_base + 0x10000;
-		LOG_INFO("Target ctibase is not set, assuming 0x%0" PRIx32, cti_base);
-	} else
-		cti_base = target->ctibase;
-
-	armv8->cti = arm_cti_create(armv8->debug_ap, cti_base);
-	if (armv8->cti == NULL)
+	if (target->private_config == NULL)
 		return ERROR_FAIL;
+
+	pc = (struct aarch64_private_config *)target->private_config;
+	if (pc->cti == NULL)
+		return ERROR_FAIL;
+
+	armv8->cti = pc->cti;
 
 	retval = aarch64_dpm_setup(aarch64, debug);
 	if (retval != ERROR_OK)
@@ -2322,22 +2365,18 @@ static int aarch64_init_target(struct command_context *cmd_ctx,
 	struct target *target)
 {
 	/* examine_first() does a bunch of this */
+	arm_semihosting_init(target);
 	return ERROR_OK;
 }
 
 static int aarch64_init_arch_info(struct target *target,
-	struct aarch64_common *aarch64, struct jtag_tap *tap)
+	struct aarch64_common *aarch64, struct adiv5_dap *dap)
 {
 	struct armv8_common *armv8 = &aarch64->armv8_common;
 
 	/* Setup struct aarch64_common */
 	aarch64->common_magic = AARCH64_COMMON_MAGIC;
-	/*  tap has no dap initialized */
-	if (!tap->dap) {
-		tap->dap = dap_init();
-		tap->dap->tap = tap;
-	}
-	armv8->arm.dap = tap->dap;
+	armv8->arm.dap = dap;
 
 	/* register arch-specific functions */
 	armv8->examine_debug_reason = NULL;
@@ -2353,9 +2392,27 @@ static int aarch64_init_arch_info(struct target *target,
 
 static int aarch64_target_create(struct target *target, Jim_Interp *interp)
 {
+	struct aarch64_private_config *pc = target->private_config;
 	struct aarch64_common *aarch64 = calloc(1, sizeof(struct aarch64_common));
 
-	return aarch64_init_arch_info(target, aarch64, target->tap);
+	if (adiv5_verify_config(&pc->adiv5_config) != ERROR_OK)
+		return ERROR_FAIL;
+
+	return aarch64_init_arch_info(target, aarch64, pc->adiv5_config.dap);
+}
+
+static void aarch64_deinit_target(struct target *target)
+{
+	struct aarch64_common *aarch64 = target_to_aarch64(target);
+	struct armv8_common *armv8 = &aarch64->armv8_common;
+	struct arm_dpm *dpm = &armv8->dpm;
+
+	armv8_free_reg_cache(target);
+	free(aarch64->brp_list);
+	free(dpm->dbp);
+	free(dpm->dwp);
+	free(target->private_config);
+	free(aarch64);
 }
 
 static int aarch64_mmu(struct target *target, int *enabled)
@@ -2373,6 +2430,94 @@ static int aarch64_virt2phys(struct target *target, target_addr_t virt,
 			     target_addr_t *phys)
 {
 	return armv8_mmu_translate_va_pa(target, virt, phys, 1);
+}
+
+/*
+ * private target configuration items
+ */
+enum aarch64_cfg_param {
+	CFG_CTI,
+};
+
+static const Jim_Nvp nvp_config_opts[] = {
+	{ .name = "-cti", .value = CFG_CTI },
+	{ .name = NULL, .value = -1 }
+};
+
+static int aarch64_jim_configure(struct target *target, Jim_GetOptInfo *goi)
+{
+	struct aarch64_private_config *pc;
+	Jim_Nvp *n;
+	int e;
+
+	pc = (struct aarch64_private_config *)target->private_config;
+	if (pc == NULL) {
+			pc = calloc(1, sizeof(struct aarch64_private_config));
+			target->private_config = pc;
+	}
+
+	/*
+	 * Call adiv5_jim_configure() to parse the common DAP options
+	 * It will return JIM_CONTINUE if it didn't find any known
+	 * options, JIM_OK if it correctly parsed the topmost option
+	 * and JIM_ERR if an error occured during parameter evaluation.
+	 * For JIM_CONTINUE, we check our own params.
+	 */
+	e = adiv5_jim_configure(target, goi);
+	if (e != JIM_CONTINUE)
+		return e;
+
+	/* parse config or cget options ... */
+	if (goi->argc > 0) {
+		Jim_SetEmptyResult(goi->interp);
+
+		/* check first if topmost item is for us */
+		e = Jim_Nvp_name2value_obj(goi->interp, nvp_config_opts,
+				goi->argv[0], &n);
+		if (e != JIM_OK)
+			return JIM_CONTINUE;
+
+		e = Jim_GetOpt_Obj(goi, NULL);
+		if (e != JIM_OK)
+			return e;
+
+		switch (n->value) {
+		case CFG_CTI: {
+			if (goi->isconfigure) {
+				Jim_Obj *o_cti;
+				struct arm_cti *cti;
+				e = Jim_GetOpt_Obj(goi, &o_cti);
+				if (e != JIM_OK)
+					return e;
+				cti = cti_instance_by_jim_obj(goi->interp, o_cti);
+				if (cti == NULL) {
+					Jim_SetResultString(goi->interp, "CTI name invalid!", -1);
+					return JIM_ERR;
+				}
+				pc->cti = cti;
+			} else {
+				if (goi->argc != 0) {
+					Jim_WrongNumArgs(goi->interp,
+							goi->argc, goi->argv,
+							"NO PARAMS");
+					return JIM_ERR;
+				}
+
+				if (pc == NULL || pc->cti == NULL) {
+					Jim_SetResultString(goi->interp, "CTI not configured", -1);
+					return JIM_ERR;
+				}
+				Jim_SetResultString(goi->interp, arm_cti_name(pc->cti), -1);
+			}
+			break;
+		}
+
+		default:
+			return JIM_CONTINUE;
+		}
+	}
+
+	return JIM_OK;
 }
 
 COMMAND_HANDLER(aarch64_handle_cache_info_command)
@@ -2460,6 +2605,143 @@ COMMAND_HANDLER(aarch64_mask_interrupts_command)
 	return ERROR_OK;
 }
 
+static int jim_mcrmrc(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
+{
+	struct command_context *context;
+	struct target *target;
+	struct arm *arm;
+	int retval;
+	bool is_mcr = false;
+	int arg_cnt = 0;
+
+	if (Jim_CompareStringImmediate(interp, argv[0], "mcr")) {
+		is_mcr = true;
+		arg_cnt = 7;
+	} else {
+		arg_cnt = 6;
+	}
+
+	context = current_command_context(interp);
+	assert(context != NULL);
+
+	target = get_current_target(context);
+	if (target == NULL) {
+		LOG_ERROR("%s: no current target", __func__);
+		return JIM_ERR;
+	}
+	if (!target_was_examined(target)) {
+		LOG_ERROR("%s: not yet examined", target_name(target));
+		return JIM_ERR;
+	}
+
+	arm = target_to_arm(target);
+	if (!is_arm(arm)) {
+		LOG_ERROR("%s: not an ARM", target_name(target));
+		return JIM_ERR;
+	}
+
+	if (target->state != TARGET_HALTED)
+		return ERROR_TARGET_NOT_HALTED;
+
+	if (arm->core_state == ARM_STATE_AARCH64) {
+		LOG_ERROR("%s: not 32-bit arm target", target_name(target));
+		return JIM_ERR;
+	}
+
+	if (argc != arg_cnt) {
+		LOG_ERROR("%s: wrong number of arguments", __func__);
+		return JIM_ERR;
+	}
+
+	int cpnum;
+	uint32_t op1;
+	uint32_t op2;
+	uint32_t CRn;
+	uint32_t CRm;
+	uint32_t value;
+	long l;
+
+	/* NOTE:  parameter sequence matches ARM instruction set usage:
+	 *	MCR	pNUM, op1, rX, CRn, CRm, op2	; write CP from rX
+	 *	MRC	pNUM, op1, rX, CRn, CRm, op2	; read CP into rX
+	 * The "rX" is necessarily omitted; it uses Tcl mechanisms.
+	 */
+	retval = Jim_GetLong(interp, argv[1], &l);
+	if (retval != JIM_OK)
+		return retval;
+	if (l & ~0xf) {
+		LOG_ERROR("%s: %s %d out of range", __func__,
+			"coprocessor", (int) l);
+		return JIM_ERR;
+	}
+	cpnum = l;
+
+	retval = Jim_GetLong(interp, argv[2], &l);
+	if (retval != JIM_OK)
+		return retval;
+	if (l & ~0x7) {
+		LOG_ERROR("%s: %s %d out of range", __func__,
+			"op1", (int) l);
+		return JIM_ERR;
+	}
+	op1 = l;
+
+	retval = Jim_GetLong(interp, argv[3], &l);
+	if (retval != JIM_OK)
+		return retval;
+	if (l & ~0xf) {
+		LOG_ERROR("%s: %s %d out of range", __func__,
+			"CRn", (int) l);
+		return JIM_ERR;
+	}
+	CRn = l;
+
+	retval = Jim_GetLong(interp, argv[4], &l);
+	if (retval != JIM_OK)
+		return retval;
+	if (l & ~0xf) {
+		LOG_ERROR("%s: %s %d out of range", __func__,
+			"CRm", (int) l);
+		return JIM_ERR;
+	}
+	CRm = l;
+
+	retval = Jim_GetLong(interp, argv[5], &l);
+	if (retval != JIM_OK)
+		return retval;
+	if (l & ~0x7) {
+		LOG_ERROR("%s: %s %d out of range", __func__,
+			"op2", (int) l);
+		return JIM_ERR;
+	}
+	op2 = l;
+
+	value = 0;
+
+	if (is_mcr == true) {
+		retval = Jim_GetLong(interp, argv[6], &l);
+		if (retval != JIM_OK)
+			return retval;
+		value = l;
+
+		/* NOTE: parameters reordered! */
+		/* ARMV4_5_MCR(cpnum, op1, 0, CRn, CRm, op2) */
+		retval = arm->mcr(target, cpnum, op1, op2, CRn, CRm, value);
+		if (retval != ERROR_OK)
+			return JIM_ERR;
+	} else {
+		/* NOTE: parameters reordered! */
+		/* ARMV4_5_MRC(cpnum, op1, 0, CRn, CRm, op2) */
+		retval = arm->mrc(target, cpnum, op1, op2, CRn, CRm, &value);
+		if (retval != ERROR_OK)
+			return JIM_ERR;
+
+		Jim_SetResult(interp, Jim_NewIntObj(interp, value));
+	}
+
+	return JIM_OK;
+}
+
 static const struct command_registration aarch64_exec_command_handlers[] = {
 	{
 		.name = "cache_info",
@@ -2495,9 +2777,25 @@ static const struct command_registration aarch64_exec_command_handlers[] = {
 		.help = "mask aarch64 interrupts during single-step",
 		.usage = "['on'|'off']",
 	},
+	{
+		.name = "mcr",
+		.mode = COMMAND_EXEC,
+		.jim_handler = jim_mcrmrc,
+		.help = "write coprocessor register",
+		.usage = "cpnum op1 CRn CRm op2 value",
+	},
+	{
+		.name = "mrc",
+		.mode = COMMAND_EXEC,
+		.jim_handler = jim_mcrmrc,
+		.help = "read coprocessor register",
+		.usage = "cpnum op1 CRn CRm op2",
+	},
+
 
 	COMMAND_REGISTRATION_DONE
 };
+
 static const struct command_registration aarch64_command_handlers[] = {
 	{
 		.chain = armv8_command_handlers,
@@ -2540,7 +2838,9 @@ struct target_type aarch64_target = {
 
 	.commands = aarch64_command_handlers,
 	.target_create = aarch64_target_create,
+	.target_jim_configure = aarch64_jim_configure,
 	.init_target = aarch64_init_target,
+	.deinit_target = aarch64_deinit_target,
 	.examine = aarch64_examine,
 
 	.read_phys_memory = aarch64_read_phys_memory,

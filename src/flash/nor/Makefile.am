@@ -18,6 +18,9 @@ NOR_DRIVERS = \
 	%D%/ath79.c \
 	%D%/atsamv.c \
 	%D%/avrf.c \
+	%D%/bluenrg-x.c \
+	%D%/cc3220sf.c \
+	%D%/cc26xx.c \
 	%D%/cfi.c \
 	%D%/dsp5680xx_flash.c \
 	%D%/efm32.c \
@@ -33,6 +36,7 @@ NOR_DRIVERS = \
 	%D%/lpc2900.c \
 	%D%/lpcspifi.c \
 	%D%/mdr.c \
+	%D%/msp432.c \
 	%D%/mrvlqspi.c \
 	%D%/niietcm4.c \
 	%D%/non_cfi.c \
@@ -41,6 +45,8 @@ NOR_DRIVERS = \
 	%D%/ocl.c \
 	%D%/pic32mx.c \
 	%D%/psoc4.c \
+	%D%/psoc5lp.c \
+	%D%/psoc6.c \
 	%D%/sim3x.c \
 	%D%/spi.c \
 	%D%/stmsmi.c \
@@ -61,9 +67,12 @@ NOR_DRIVERS = \
 
 NORHEADERS = \
 	%D%/core.h \
+	%D%/cc3220sf.h \
+	%D%/cc26xx.h \
 	%D%/cfi.h \
 	%D%/driver.h \
 	%D%/imp.h \
 	%D%/non_cfi.h \
 	%D%/ocl.h \
-	%D%/spi.h
+	%D%/spi.h \
+	%D%/msp432.h

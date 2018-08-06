@@ -35,6 +35,7 @@ extern struct rtos_type ChibiOS_rtos;
 extern struct rtos_type embKernel_rtos;
 extern struct rtos_type mqx_rtos;
 extern struct rtos_type uCOS_III_rtos;
+extern struct rtos_type nuttx_rtos;
 extern struct rtos_type scmRTOS_rtos;
 
 static struct rtos_type *rtos_types[] = {
@@ -46,6 +47,7 @@ static struct rtos_type *rtos_types[] = {
 	&embKernel_rtos,
 	&mqx_rtos,
 	&uCOS_III_rtos,
+	&nuttx_rtos,
 	&scmRTOS_rtos,
 	NULL
 };
@@ -57,6 +59,15 @@ int rtos_smp_init(struct target *target)
 	if (target->rtos->type->smp_init)
 		return target->rtos->type->smp_init(target);
 	return ERROR_TARGET_INIT_FAILED;
+}
+
+static int rtos_target_for_threadid(struct connection *connection, int64_t threadid, struct target **t)
+{
+	struct target *curr = get_target_from_connection(connection);
+	if (t)
+		*t = curr;
+
+	return ERROR_OK;
 }
 
 static int os_alloc(struct target *target, struct rtos_type *ostype)
@@ -74,6 +85,7 @@ static int os_alloc(struct target *target, struct rtos_type *ostype)
 
 	/* RTOS drivers can override the packet handler in _create(). */
 	os->gdb_thread_packet = rtos_thread_packet;
+	os->gdb_target_for_threadid = rtos_target_for_threadid;
 
 	return JIM_OK;
 }
@@ -341,8 +353,8 @@ int rtos_thread_packet(struct connection *connection, char const *packet, int pa
 			if (target->rtos_auto_detect == true) {
 				target->rtos_auto_detect = false;
 				target->rtos->type->create(target);
-				target->rtos->type->update_threads(target->rtos);
 			}
+			target->rtos->type->update_threads(target->rtos);
 		}
 		return ERROR_OK;
 	} else if (strncmp(packet, "qfThreadInfo", 12) == 0) {
