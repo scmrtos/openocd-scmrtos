@@ -4,7 +4,9 @@ else
 OOCD_TRACE_FILES =
 endif
 
-%C%_libtarget_la_LIBADD = %D%/openrisc/libopenrisc.la
+%C%_libtarget_la_LIBADD = %D%/openrisc/libopenrisc.la \
+	%D%/riscv/libriscv.la
+
 
 STARTUP_TCL_SRCS += %D%/startup.tcl
 
@@ -39,6 +41,7 @@ TARGET_CORE_SRC = \
 	%D%/target.c \
 	%D%/target_request.c \
 	%D%/testee.c \
+	%D%/semihosting_common.c \
 	%D%/smp.c
 
 ARMV4_5_SRC = \
@@ -88,6 +91,7 @@ ARM_DEBUG_SRC = \
 	%D%/arm_simulator.c \
 	%D%/arm_semihosting.c \
 	%D%/arm_adi_v5.c \
+	%D%/arm_dap.c \
 	%D%/armv7a_cache.c \
 	%D%/armv7a_cache_l2x.c \
 	%D%/adi_v5_jtag.c \
@@ -209,9 +213,11 @@ INTEL_IA32_SRC = \
 	%D%/nds32_v3.h \
 	%D%/nds32_v3m.h \
 	%D%/nds32_aice.h \
+	%D%/semihosting_common.h \
 	%D%/stm8.h \
 	%D%/lakemont.h \
 	%D%/x86_32_common.h \
 	%D%/arm_cti.h
 
 include %D%/openrisc/Makefile.am
+include %D%/riscv/Makefile.am

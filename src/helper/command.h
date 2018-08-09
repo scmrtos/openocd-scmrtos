@@ -22,7 +22,11 @@
 #ifndef OPENOCD_HELPER_COMMAND_H
 #define OPENOCD_HELPER_COMMAND_H
 
+#include <stdint.h>
+#include <stdbool.h>
 #include <jim-nvp.h>
+
+#include <helper/types.h>
 
 /* To achieve C99 printf compatibility in MinGW, gnu_printf should be
  * used for __attribute__((format( ... ))), with GCC v4.4 or later

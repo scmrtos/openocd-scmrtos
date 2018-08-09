@@ -344,6 +344,8 @@ static int mips_m4k_assert_reset(struct target *target)
 			jtag_add_reset(1, 1);
 		else if (!srst_asserted)
 			jtag_add_reset(0, 1);
+	} else if (target_has_event_action(target, TARGET_EVENT_RESET_ASSERT)) {
+		target_handle_event(target, TARGET_EVENT_RESET_ASSERT);
 	} else {
 		if (mips_m4k->is_pic32mx) {
 			LOG_DEBUG("Using MTAP reset to reset processor...");
@@ -702,7 +704,7 @@ static int mips_m4k_set_breakpoint(struct target *target,
 			}
 
 			if (verify == 0) {
-				LOG_ERROR("Unable to set 32bit breakpoint at address %08" PRIx64
+				LOG_ERROR("Unable to set 32bit breakpoint at address %08" TARGET_PRIxADDR
 					" - check that memory is read/writable", breakpoint->address);
 				return ERROR_OK;
 			}
@@ -723,7 +725,7 @@ static int mips_m4k_set_breakpoint(struct target *target,
 				return retval;
 
 			if (verify != MIPS16_SDBBP(isa_req)) {
-				LOG_ERROR("Unable to set 16bit breakpoint at address %08" PRIx64
+				LOG_ERROR("Unable to set 16bit breakpoint at address %08" TARGET_PRIxADDR
 						" - check that memory is read/writable", breakpoint->address);
 				return ERROR_OK;
 			}
