@@ -40,7 +40,7 @@
 static bool scmRTOS_detect_rtos               (struct target *target);
 static int scmRTOS_create                    (struct target *target);
 static int scmRTOS_update_proc_info          (struct rtos *rtos);
-static int scmRTOS_get_proc_reg_list         (struct rtos *rtos, int64_t thread_id, char **hex_reg_list);
+static int scmRTOS_get_proc_reg_list         (struct rtos *rtos, int64_t thread_id, struct rtos_reg **reg_list, int *num_regs);
 static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]);
 static int scmRTOS_clean                     (struct target *target);
 //------------------------------------------------------------------------------
@@ -368,7 +368,7 @@ int scmRTOS_update_proc_info(struct rtos *rtos)
     return ERROR_OK;
 }
 //------------------------------------------------------------------------------
-int scmRTOS_get_proc_reg_list(struct rtos *rtos, int64_t thread_id, char **hex_reg_list)
+int scmRTOS_get_proc_reg_list(struct rtos *rtos, int64_t thread_id, struct rtos_reg **hex_reg_list, int *num_regs)
 {
     int      res;
     uint32_t stack_ptr = 0;
@@ -400,7 +400,7 @@ int scmRTOS_get_proc_reg_list(struct rtos *rtos, int64_t thread_id, char **hex_r
     }
     LOG_DBG("scmRTOS> I: process stack pointer at 0x%x, value 0x%x\r\n", sp_addr, stack_ptr);
 
-    return rtos_generic_stack_read(rtos->target, params->stacking_info, stack_ptr, hex_reg_list);
+    return rtos_generic_stack_read(rtos->target, params->stacking_info, stack_ptr, hex_reg_list, num_regs);
     
 }
 //------------------------------------------------------------------------------

@@ -71,11 +71,12 @@ int jtag_libusb_open(const uint16_t vids[], const uint16_t pids[],
 		struct jtag_libusb_device_handle **out)
 {
 	int cnt, idx, errCode;
-	int retval = -ENODEV;
+	int retval = ERROR_FAIL;
+	bool serial_mismatch = false;
 	struct jtag_libusb_device_handle *libusb_handle = NULL;
 
 	if (libusb_init(&jtag_libusb_context) < 0)
-		return -ENODEV;
+		return ERROR_FAIL;
 
 	cnt = libusb_get_device_list(jtag_libusb_context, &devs);
 
@@ -99,17 +100,23 @@ int jtag_libusb_open(const uint16_t vids[], const uint16_t pids[],
 		/* Device must be open to use libusb_get_string_descriptor_ascii. */
 		if (serial != NULL &&
 				!string_descriptor_equal(libusb_handle, dev_desc.iSerialNumber, serial)) {
+			serial_mismatch = true;
 			libusb_close(libusb_handle);
 			continue;
 		}
 
 		/* Success. */
 		*out = libusb_handle;
-		retval = 0;
+		retval = ERROR_OK;
+		serial_mismatch = false;
 		break;
 	}
 	if (cnt >= 0)
 		libusb_free_device_list(devs, 1);
+
+	if (serial_mismatch)
+		LOG_INFO("No device matches the serial string");
+
 	return retval;
 }
 

@@ -470,6 +470,9 @@ static int adapter_poll(struct target *target)
 	if (prev_target_state == state)
 		return ERROR_OK;
 
+	if (prev_target_state == TARGET_DEBUG_RUNNING && state == TARGET_RUNNING)
+		return ERROR_OK;
+
 	target->state = state;
 
 	if (state == TARGET_HALTED) {
@@ -820,6 +823,7 @@ struct target_type hla_target = {
 	.resume = adapter_resume,
 	.step = adapter_step,
 
+	.get_gdb_arch = arm_get_gdb_arch,
 	.get_gdb_reg_list = armv7m_get_gdb_reg_list,
 
 	.read_memory = adapter_read_memory,
