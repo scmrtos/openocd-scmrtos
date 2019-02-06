@@ -429,8 +429,8 @@ static int scmRTOS_clean(struct target *target)
     if(rtos == NULL) 
         return ERROR_OK;
         
-	scmRTOS_params_t *params = (scmRTOS_params_t *)
-		rtos->rtos_specific_params;
+    scmRTOS_params_t *params = (scmRTOS_params_t *)
+        rtos->rtos_specific_params;
     if(params == NULL)
         return ERROR_OK;
 
