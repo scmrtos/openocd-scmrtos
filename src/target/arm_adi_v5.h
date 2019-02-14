@@ -136,6 +136,9 @@
 #define DP_SELECT_DPBANK 0x0000000F
 #define DP_SELECT_INVALID 0x00FFFF00 /* Reserved bits one */
 
+#define DP_APSEL_MAX        (255)
+#define DP_APSEL_INVALID    (-1)
+
 /**
  * This represents an ARM Debug Interface (v5) Access Port (AP).
  * Most common is a MEM-AP, for memory access.
@@ -513,10 +516,10 @@ int dap_lookup_cs_component(struct adiv5_ap *ap,
 struct target;
 
 /* Put debug link into SWD mode */
-int dap_to_swd(struct target *target);
+int dap_to_swd(struct adiv5_dap *dap);
 
 /* Put debug link into JTAG mode */
-int dap_to_jtag(struct target *target);
+int dap_to_jtag(struct adiv5_dap *dap);
 
 extern const struct command_registration dap_instance_commands[];
 

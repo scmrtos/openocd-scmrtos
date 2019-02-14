@@ -59,7 +59,7 @@
 /*
  * Relevant specifications from ARM include:
  *
- * ARM(tm) Debug Interface v5 Architecture Specification    ARM IHI 0031A
+ * ARM(tm) Debug Interface v5 Architecture Specification    ARM IHI 0031E
  * CoreSight(tm) v1.0 Architecture Specification            ARM IHI 0029B
  *
  * CoreSight(tm) DAP-Lite TRM, ARM DDI 0316D
@@ -73,6 +73,8 @@
 #include "jtag/interface.h"
 #include "arm.h"
 #include "arm_adi_v5.h"
+#include "jtag/swd.h"
+#include "transport/transport.h"
 #include <helper/jep106.h>
 #include <helper/time_support.h>
 #include <helper/list.h>
@@ -652,6 +654,15 @@ int dap_dp_init(struct adiv5_dap *dap)
 
 	dap_invalidate_cache(dap);
 
+	/*
+	 * Early initialize dap->dp_ctrl_stat.
+	 * In jtag mode only, if the following atomic reads fail and set the
+	 * sticky error, it will trigger the clearing of the sticky. Without this
+	 * initialization system and debug power would be disabled while clearing
+	 * the sticky error bit.
+	 */
+	dap->dp_ctrl_stat = CDBGPWRUPREQ | CSYSPWRUPREQ;
+
 	for (size_t i = 0; i < 30; i++) {
 		/* DP initialization */
 
@@ -660,7 +671,18 @@ int dap_dp_init(struct adiv5_dap *dap)
 			break;
 	}
 
-	retval = dap_queue_dp_write(dap, DP_CTRL_STAT, SSTICKYERR);
+	/*
+	 * This write operation clears the sticky error bit in jtag mode only and
+	 * is ignored in swd mode. It also powers-up system and debug domains in
+	 * both jtag and swd modes, if not done before.
+	 * Actually we do not need to clear the sticky error here because it has
+	 * been already cleared (if it was set) in the previous atomic read. This
+	 * write could be removed, but this initial part of dap_dp_init() is the
+	 * result of years of fine tuning and there are strong concerns about any
+	 * unnecessary code change. It doesn't harm, so let's keep it here and
+	 * preserve the historical sequence of read/write operations!
+	 */
+	retval = dap_queue_dp_write(dap, DP_CTRL_STAT, dap->dp_ctrl_stat | SSTICKYERR);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -668,7 +690,6 @@ int dap_dp_init(struct adiv5_dap *dap)
 	if (retval != ERROR_OK)
 		return retval;
 
-	dap->dp_ctrl_stat = CDBGPWRUPREQ | CSYSPWRUPREQ;
 	retval = dap_queue_dp_write(dap, DP_CTRL_STAT, dap->dp_ctrl_stat);
 	if (retval != ERROR_OK)
 		return retval;
@@ -769,6 +790,77 @@ int mem_ap_init(struct adiv5_ap *ap)
 	return ERROR_OK;
 }
 
+/**
+ * Put the debug link into SWD mode, if the target supports it.
+ * The link's initial mode may be either JTAG (for example,
+ * with SWJ-DP after reset) or SWD.
+ *
+ * Note that targets using the JTAG-DP do not support SWD, and that
+ * some targets which could otherwise support it may have been
+ * configured to disable SWD signaling
+ *
+ * @param dap The DAP used
+ * @return ERROR_OK or else a fault code.
+ */
+int dap_to_swd(struct adiv5_dap *dap)
+{
+	int retval;
+
+	LOG_DEBUG("Enter SWD mode");
+
+	if (transport_is_jtag()) {
+		retval =  jtag_add_tms_seq(swd_seq_jtag_to_swd_len,
+				swd_seq_jtag_to_swd, TAP_INVALID);
+		if (retval == ERROR_OK)
+			retval = jtag_execute_queue();
+		return retval;
+	}
+
+	if (transport_is_swd()) {
+		const struct swd_driver *swd = adiv5_dap_swd_driver(dap);
+
+		return swd->switch_seq(JTAG_TO_SWD);
+	}
+
+	LOG_ERROR("Nor JTAG nor SWD transport");
+	return ERROR_FAIL;
+}
+
+/**
+ * Put the debug link into JTAG mode, if the target supports it.
+ * The link's initial mode may be either SWD or JTAG.
+ *
+ * Note that targets implemented with SW-DP do not support JTAG, and
+ * that some targets which could otherwise support it may have been
+ * configured to disable JTAG signaling
+ *
+ * @param dap The DAP used
+ * @return ERROR_OK or else a fault code.
+ */
+int dap_to_jtag(struct adiv5_dap *dap)
+{
+	int retval;
+
+	LOG_DEBUG("Enter JTAG mode");
+
+	if (transport_is_jtag()) {
+		retval = jtag_add_tms_seq(swd_seq_swd_to_jtag_len,
+				swd_seq_swd_to_jtag, TAP_RESET);
+		if (retval == ERROR_OK)
+			retval = jtag_execute_queue();
+		return retval;
+	}
+
+	if (transport_is_swd()) {
+		const struct swd_driver *swd = adiv5_dap_swd_driver(dap);
+
+		return swd->switch_seq(SWD_TO_JTAG);
+	}
+
+	LOG_ERROR("Nor JTAG nor SWD transport");
+	return ERROR_FAIL;
+}
+
 /* CID interpretation -- see ARM IHI 0029B section 3
  * and ARM IHI 0031A table 13-3.
  */
@@ -793,7 +885,7 @@ int dap_find_ap(struct adiv5_dap *dap, enum ap_type type_to_find, struct adiv5_a
 	int ap_num;
 
 	/* Maximum AP number is 255 since the SELECT register is 8 bits */
-	for (ap_num = 0; ap_num <= 255; ap_num++) {
+	for (ap_num = 0; ap_num <= DP_APSEL_MAX; ap_num++) {
 
 		/* read the IDR register of the Access Port */
 		uint32_t id_val = 0;
@@ -1429,7 +1521,7 @@ int adiv5_jim_configure(struct target *target, Jim_GetOptInfo *goi)
 	pc = (struct adiv5_private_config *)target->private_config;
 	if (pc == NULL) {
 		pc = calloc(1, sizeof(struct adiv5_private_config));
-		pc->ap_num = -1;
+		pc->ap_num = DP_APSEL_INVALID;
 		target->private_config = pc;
 	}
 
@@ -1498,6 +1590,10 @@ int adiv5_jim_configure(struct target *target, Jim_GetOptInfo *goi)
 				e = Jim_GetOpt_Wide(goi, &ap_num);
 				if (e != JIM_OK)
 					return e;
+				if (ap_num < 0 || ap_num > DP_APSEL_MAX) {
+					Jim_SetResultString(goi->interp, "Invalid AP number!", -1);
+					return JIM_ERR;
+				}
 				pc->ap_num = ap_num;
 			} else {
 				if (goi->argc != 0) {
@@ -1507,11 +1603,11 @@ int adiv5_jim_configure(struct target *target, Jim_GetOptInfo *goi)
 					return JIM_ERR;
 				}
 
-				if (pc->ap_num < 0) {
+				if (pc->ap_num == DP_APSEL_INVALID) {
 					Jim_SetResultString(goi->interp, "AP number not configured", -1);
 					return JIM_ERR;
 				}
-				Jim_SetResult(goi->interp, Jim_NewIntObj(goi->interp, (int)pc->ap_num));
+				Jim_SetResult(goi->interp, Jim_NewIntObj(goi->interp, pc->ap_num));
 			}
 			break;
 		}
@@ -1543,7 +1639,7 @@ COMMAND_HANDLER(handle_dap_info_command)
 		break;
 	case 1:
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], apsel);
-		if (apsel >= 256)
+		if (apsel > DP_APSEL_MAX)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		break;
 	default:
@@ -1566,7 +1662,7 @@ COMMAND_HANDLER(dap_baseaddr_command)
 	case 1:
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], apsel);
 		/* AP address is in bits 31:24 of DP_SELECT */
-		if (apsel >= 256)
+		if (apsel > DP_APSEL_MAX)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		break;
 	default:
@@ -1625,7 +1721,7 @@ COMMAND_HANDLER(dap_apsel_command)
 	case 1:
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], apsel);
 		/* AP address is in bits 31:24 of DP_SELECT */
-		if (apsel >= 256)
+		if (apsel > DP_APSEL_MAX)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		break;
 	default:
@@ -1691,7 +1787,7 @@ COMMAND_HANDLER(dap_apid_command)
 	case 1:
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], apsel);
 		/* AP address is in bits 31:24 of DP_SELECT */
-		if (apsel >= 256)
+		if (apsel > DP_APSEL_MAX)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		break;
 	default:
@@ -1722,7 +1818,7 @@ COMMAND_HANDLER(dap_apreg_command)
 
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], apsel);
 	/* AP address is in bits 31:24 of DP_SELECT */
-	if (apsel >= 256)
+	if (apsel > DP_APSEL_MAX)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	ap = dap_ap(dap, apsel);
 
@@ -1734,8 +1830,10 @@ COMMAND_HANDLER(dap_apreg_command)
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[2], value);
 		switch (reg) {
 		case MEM_AP_REG_CSW:
-			ap->csw_default = 0;  /* invalid, force write */
-			retval = mem_ap_setup_csw(ap, value);
+			ap->csw_value = 0;  /* invalid, in case write fails */
+			retval = dap_queue_ap_write(ap, reg, value);
+			if (retval == ERROR_OK)
+				ap->csw_value = value;
 			break;
 		case MEM_AP_REG_TAR:
 			ap->tar_valid = false;  /* invalid, force write */
