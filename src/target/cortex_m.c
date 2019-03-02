@@ -877,10 +877,17 @@ static int cortex_m_step(struct target *target, int current,
 			else {
 
 				/* Set a temporary break point */
-				if (breakpoint)
+				if (breakpoint) {
 					retval = cortex_m_set_breakpoint(target, breakpoint);
-				else
-					retval = breakpoint_add(target, pc_value, 2, BKPT_HARD);
+				} else {
+					enum breakpoint_type type = BKPT_HARD;
+					if (cortex_m->fp_rev == 0 && pc_value > 0x1FFFFFFF) {
+						/* FPB rev.1 cannot handle such addr, try BKPT instr */
+						type = BKPT_SOFT;
+					}
+					retval = breakpoint_add(target, pc_value, 2, type);
+				}
+
 				bool tmp_bp_set = (retval == ERROR_OK);
 
 				/* No more breakpoints left, just do a step */
@@ -2262,21 +2269,27 @@ static int cortex_m_init_arch_info(struct target *target,
 	armv7m->load_core_reg_u32 = cortex_m_load_core_reg_u32;
 	armv7m->store_core_reg_u32 = cortex_m_store_core_reg_u32;
 
-	target_register_timer_callback(cortex_m_handle_target_request, 1, 1, target);
+	target_register_timer_callback(cortex_m_handle_target_request, 1,
+		TARGET_TIMER_TYPE_PERIODIC, target);
 
 	return ERROR_OK;
 }
 
 static int cortex_m_target_create(struct target *target, Jim_Interp *interp)
 {
-	struct cortex_m_common *cortex_m = calloc(1, sizeof(struct cortex_m_common));
-	cortex_m->common_magic = CORTEX_M_COMMON_MAGIC;
 	struct adiv5_private_config *pc;
 
 	pc = (struct adiv5_private_config *)target->private_config;
 	if (adiv5_verify_config(pc) != ERROR_OK)
 		return ERROR_FAIL;
 
+	struct cortex_m_common *cortex_m = calloc(1, sizeof(struct cortex_m_common));
+	if (cortex_m == NULL) {
+		LOG_ERROR("No memory creating target");
+		return ERROR_FAIL;
+	}
+
+	cortex_m->common_magic = CORTEX_M_COMMON_MAGIC;
 	cortex_m->apsel = pc->ap_num;
 
 	cortex_m_init_arch_info(target, cortex_m, pc->dap);
