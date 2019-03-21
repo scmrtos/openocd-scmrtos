@@ -314,10 +314,15 @@ struct target_trace_callback {
 	int (*callback)(struct target *target, size_t len, uint8_t *data, void *priv);
 };
 
+enum target_timer_type {
+	TARGET_TIMER_TYPE_ONESHOT,
+	TARGET_TIMER_TYPE_PERIODIC
+};
+
 struct target_timer_callback {
 	int (*callback)(void *priv);
-	int time_ms;
-	int periodic;
+	unsigned int time_ms;
+	enum target_timer_type type;
 	bool removed;
 	struct timeval when;
 	void *priv;
@@ -385,7 +390,7 @@ int target_call_trace_callbacks(struct target *target, size_t len, uint8_t *data
  * or much more rarely than specified
  */
 int target_register_timer_callback(int (*callback)(void *priv),
-		int time_ms, int periodic, void *priv);
+		unsigned int time_ms, enum target_timer_type type, void *priv);
 int target_unregister_timer_callback(int (*callback)(void *priv), void *priv);
 int target_call_timer_callbacks(void);
 /**
@@ -725,6 +730,7 @@ void target_handle_event(struct target *t, enum target_event e);
 #define ERROR_TARGET_TRANSLATION_FAULT	(-309)
 #define ERROR_TARGET_NOT_RUNNING (-310)
 #define ERROR_TARGET_NOT_EXAMINED (-311)
+#define ERROR_TARGET_DUPLICATE_BREAKPOINT (-312)
 
 extern bool get_target_reset_nag(void);
 

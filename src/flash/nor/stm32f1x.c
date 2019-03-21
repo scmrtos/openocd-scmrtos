@@ -131,7 +131,7 @@ struct stm32x_flash_bank {
 static int stm32x_mass_erase(struct flash_bank *bank);
 static int stm32x_get_device_id(struct flash_bank *bank, uint32_t *device_id);
 static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
-		uint32_t offset, uint32_t count);
+		uint32_t address, uint32_t count);
 
 /* flash bank stm32x <base> <size> 0 0 <target#>
  */
@@ -229,33 +229,19 @@ static int stm32x_read_options(struct flash_bank *bank)
 	uint32_t option_bytes;
 	int retval;
 
-	/* read user and read protection option bytes */
-	retval = target_read_u32(target, STM32_OB_RDP, &option_bytes);
+	/* read user and read protection option bytes, user data option bytes */
+	retval = target_read_u32(target, STM32_FLASH_OBR_B0, &option_bytes);
 	if (retval != ERROR_OK)
 		return retval;
 
-	stm32x_info->option_bytes.rdp = option_bytes & 0xFF;
-	stm32x_info->option_bytes.user = (option_bytes >> 16) & 0xFF;
-
-	/* read user data option bytes */
-	retval = target_read_u32(target, STM32_OB_DATA0, &option_bytes);
-	if (retval != ERROR_OK)
-		return retval;
-
-	stm32x_info->option_bytes.data = ((option_bytes >> 8) & 0xFF00) | (option_bytes & 0xFF);
+	stm32x_info->option_bytes.rdp = (option_bytes & (1 << OPT_READOUT)) ? 0 : stm32x_info->default_rdp;
+	stm32x_info->option_bytes.user = (option_bytes >> stm32x_info->option_offset >> 2) & 0xff;
+	stm32x_info->option_bytes.data = (option_bytes >> stm32x_info->user_data_offset) & 0xffff;
 
 	/* read write protection option bytes */
-	retval = target_read_u32(target, STM32_OB_WRP0, &option_bytes);
+	retval = target_read_u32(target, STM32_FLASH_WRPR_B0, &stm32x_info->option_bytes.protection);
 	if (retval != ERROR_OK)
 		return retval;
-
-	stm32x_info->option_bytes.protection = ((option_bytes >> 8) & 0xFF00) | (option_bytes & 0xFF);
-
-	retval = target_read_u32(target, STM32_OB_WRP2, &option_bytes);
-	if (retval != ERROR_OK)
-		return retval;
-
-	stm32x_info->option_bytes.protection |= (((option_bytes >> 8) & 0xFF00) | (option_bytes & 0xFF)) << 16;
 
 	return ERROR_OK;
 }
@@ -343,8 +329,7 @@ static int stm32x_write_options(struct flash_bank *bank)
 	target_buffer_set_u16(target, opt_bytes + 12, (stm32x_info->option_bytes.protection >> 16) & 0xff);
 	target_buffer_set_u16(target, opt_bytes + 14, (stm32x_info->option_bytes.protection >> 24) & 0xff);
 
-	uint32_t offset = STM32_OB_RDP - bank->base;
-	retval = stm32x_write_block(bank, opt_bytes, offset, sizeof(opt_bytes) / 2);
+	retval = stm32x_write_block(bank, opt_bytes, STM32_OB_RDP, sizeof(opt_bytes) / 2);
 	if (retval != ERROR_OK) {
 		if (retval == ERROR_TARGET_RESOURCE_NOT_AVAILABLE)
 			LOG_ERROR("working area required to erase options bytes");
@@ -443,8 +428,10 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 		return retval;
 
 	retval = stm32x_erase_options(bank);
-	if (retval != ERROR_OK)
+	if (retval != ERROR_OK) {
+		LOG_ERROR("stm32x failed to erase options");
 		return retval;
+	}
 
 	for (int i = first; i <= last; i++) {
 		if (set)
@@ -457,14 +444,13 @@ static int stm32x_protect(struct flash_bank *bank, int set, int first, int last)
 }
 
 static int stm32x_write_block(struct flash_bank *bank, const uint8_t *buffer,
-		uint32_t offset, uint32_t count)
+		uint32_t address, uint32_t count)
 {
 	struct stm32x_flash_bank *stm32x_info = bank->driver_priv;
 	struct target *target = bank->target;
 	uint32_t buffer_size = 16384;
 	struct working_area *write_algorithm;
 	struct working_area *source;
-	uint32_t address = bank->base + offset;
 	struct reg_param reg_params[5];
 	struct armv7m_algorithm armv7m_info;
 	int retval = ERROR_OK;
@@ -599,7 +585,7 @@ static int stm32x_write(struct flash_bank *bank, const uint8_t *buffer,
 		goto cleanup;
 
 	/* try using a block write */
-	retval = stm32x_write_block(bank, buffer, offset, words_remaining);
+	retval = stm32x_write_block(bank, buffer, bank->base + offset, words_remaining);
 
 	if (retval == ERROR_TARGET_RESOURCE_NOT_AVAILABLE) {
 		/* if block write failed (no sufficient working area),
@@ -1227,12 +1213,12 @@ COMMAND_HANDLER(stm32x_handle_unlock_command)
 		return retval;
 
 	if (stm32x_erase_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "stm32x failed to unlock device");
+		command_print(CMD_CTX, "stm32x failed to erase options");
 		return ERROR_OK;
 	}
 
 	if (stm32x_write_options(bank) != ERROR_OK) {
-		command_print(CMD_CTX, "stm32x failed to lock device");
+		command_print(CMD_CTX, "stm32x failed to unlock device");
 		return ERROR_OK;
 	}
 
@@ -1313,7 +1299,8 @@ COMMAND_HANDLER(stm32x_handle_options_write_command)
 {
 	struct target *target = NULL;
 	struct stm32x_flash_bank *stm32x_info = NULL;
-	uint16_t optionbyte;
+	uint8_t optionbyte;
+	uint16_t useropt;
 
 	if (CMD_ARGC < 2)
 		return ERROR_COMMAND_SYNTAX_ERROR;
@@ -1342,6 +1329,7 @@ COMMAND_HANDLER(stm32x_handle_options_write_command)
 
 	/* start with current options */
 	optionbyte = stm32x_info->option_bytes.user;
+	useropt = stm32x_info->option_bytes.data;
 
 	/* skip over flash bank */
 	CMD_ARGC--;
@@ -1360,6 +1348,13 @@ COMMAND_HANDLER(stm32x_handle_options_write_command)
 			optionbyte |= (1 << 2);
 		else if (strcmp("RSTSTNDBY", CMD_ARGV[0]) == 0)
 			optionbyte &= ~(1 << 2);
+		else if (strcmp("USEROPT", CMD_ARGV[0]) == 0) {
+			if (CMD_ARGC < 2)
+				return ERROR_COMMAND_SYNTAX_ERROR;
+			COMMAND_PARSE_NUMBER(u16, CMD_ARGV[1], useropt);
+			CMD_ARGC--;
+			CMD_ARGV++;
+		}
 		else if (stm32x_info->has_dual_banks) {
 			if (strcmp("BOOT0", CMD_ARGV[0]) == 0)
 				optionbyte |= (1 << 3);
@@ -1379,6 +1374,7 @@ COMMAND_HANDLER(stm32x_handle_options_write_command)
 	}
 
 	stm32x_info->option_bytes.user = optionbyte;
+	stm32x_info->option_bytes.data = useropt;
 
 	if (stm32x_write_options(bank) != ERROR_OK) {
 		command_print(CMD_CTX, "stm32x failed to write options");
@@ -1536,7 +1532,7 @@ static const struct command_registration stm32x_exec_command_handlers[] = {
 		.mode = COMMAND_EXEC,
 		.usage = "bank_id ('SWWDG'|'HWWDG') "
 			"('RSTSTNDBY'|'NORSTSTNDBY') "
-			"('RSTSTOP'|'NORSTSTOP')",
+			"('RSTSTOP'|'NORSTSTOP') ('USEROPT' user_data)",
 		.help = "Replace bits in device option bytes.",
 	},
 	{
