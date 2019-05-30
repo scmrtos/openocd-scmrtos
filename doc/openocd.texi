@@ -1802,10 +1802,11 @@ displayed by the GDB session @pxref{usingopenocdsmpwithgdb,,Using OpenOCD SMP wi
 The SMP behaviour can be disabled/enabled dynamically. On cortex_a following
 command have been implemented.
 @itemize @bullet
-@item cortex_a smp_on : enable SMP mode, behaviour is as described above.
-@item cortex_a smp_off : disable SMP mode, the current target is the one
+@item cortex_a smp on : enable SMP mode, behaviour is as described above.
+@item cortex_a smp off : disable SMP mode, the current target is the one
 displayed in the GDB session, only this target is now controlled by GDB
 session. This behaviour is useful during system boot up.
+@item cortex_a smp : display current SMP mode.
 @item cortex_a smp_gdb : display/fix the core id displayed in GDB session see
 following example.
 @end itemize
@@ -2369,8 +2370,8 @@ Returns the name of the debug adapter driver being used.
 @end deffn
 
 @anchor{adapter_usb_location}
-@deffn Command {adapter usb location} <bus>-<port>[.<port>]...
-Specifies the physical USB port of the adapter to use. The path
+@deffn Command {adapter usb location} [<bus>-<port>[.<port>]...]
+Displays or specifies the physical USB port of the adapter to use. The path
 roots at @var{bus} and walks down the physical ports, with each
 @var{port} option specifying a deeper level in the bus topology, the last
 @var{port} denoting where the target adapter is actually plugged.
@@ -2513,7 +2514,7 @@ and are not restricted to containing only decimal digits.)
 
 @deffn {Config Command} {ftdi_location} <bus>-<port>[.<port>]...
 @emph{DEPRECATED -- avoid using this.
-Use the @xref{adapter_usb_location, adapter usb location} command instead.}
+Use the command @ref{adapter_usb_location,,adapter usb location} instead.}
 
 Specifies the physical USB port of the adapter to use. The path
 roots at @var{bus} and walks down the physical ports, with each
@@ -3894,10 +3895,14 @@ devices do not set the ack bit until sometime later.
 
 @section Other TAP commands
 
+@deffn Command {jtag cget} dotted.name @option{-idcode}
+Get the value of the IDCODE found in hardware.
+@end deffn
+
 @deffn Command {jtag cget} dotted.name @option{-event} event_name
 @deffnx Command {jtag configure} dotted.name @option{-event} event_name handler
 At this writing this TAP attribute
-mechanism is used only for event handling.
+mechanism is limited and used mostly for event handling.
 (It is not a direct analogue of the @code{cget}/@code{configure}
 mechanism for debugger targets.)
 See the next section for information about the available events.
@@ -4366,6 +4371,7 @@ compact Thumb2 instruction set.
 The current implementation supports eSi-32xx cores.
 @item @code{fa526} -- resembles arm920 (w/o Thumb)
 @item @code{feroceon} -- resembles arm926
+@item @code{mem_ap} -- this is an ARM debug infrastructure Access Port without a CPU, through which bus read and write cycles can be generated; it may be useful for working with non-CPU hardware behind an AP or during development of support for new CPUs.
 @item @code{mips_m4k} -- a MIPS core
 @item @code{xscale} -- this is actually an architecture,
 not a CPU type. It is based on the ARMv5 architecture.
@@ -4374,14 +4380,14 @@ The current implementation supports three JTAG TAP cores:
 @item @code{ls1_sap} -- this is the SAP on NXP LS102x CPUs,
 allowing access to physical memory addresses independently of CPU cores.
 @itemize @minus
-@item @code{OpenCores TAP} (See: @url{http://opencores.org/project,jtag})
+@item @code{OpenCores TAP} (See: @url{http://opencores.org/project@comma{}jtag})
 @item @code{Altera Virtual JTAG TAP} (See: @url{http://www.altera.com/literature/ug/ug_virtualjtag.pdf})
 @item @code{Xilinx BSCAN_* virtual JTAG interface} (See: @url{http://www.xilinx.com/support/documentation/sw_manuals/xilinx14_2/spartan6_hdl.pdf})
 @end itemize
 And two debug interfaces cores:
 @itemize @minus
-@item @code{Advanced debug interface} (See: @url{http://opencores.org/project,adv_debug_sys})
-@item @code{SoC Debug Interface} (See: @url{http://opencores.org/project,dbg_interface})
+@item @code{Advanced debug interface} (See: @url{http://opencores.org/project@comma{}adv_debug_sys})
+@item @code{SoC Debug Interface} (See: @url{http://opencores.org/project@comma{}dbg_interface})
 @end itemize
 @end itemize
 @end deffn
@@ -4682,23 +4688,35 @@ Invokes the handler for the event named @var{event_name}.
 code, for example by the reset code in @file{startup.tcl}.)
 @end deffn
 
-@deffn Command {$target_name mdw} addr [count]
-@deffnx Command {$target_name mdh} addr [count]
-@deffnx Command {$target_name mdb} addr [count]
+@deffn Command {$target_name mdd} [phys] addr [count]
+@deffnx Command {$target_name mdw} [phys] addr [count]
+@deffnx Command {$target_name mdh} [phys] addr [count]
+@deffnx Command {$target_name mdb} [phys] addr [count]
 Display contents of address @var{addr}, as
+64-bit doublewords (@command{mdd}),
 32-bit words (@command{mdw}), 16-bit halfwords (@command{mdh}),
 or 8-bit bytes (@command{mdb}).
+When the current target has an MMU which is present and active,
+@var{addr} is interpreted as a virtual address.
+Otherwise, or if the optional @var{phys} flag is specified,
+@var{addr} is interpreted as a physical address.
 If @var{count} is specified, displays that many units.
 (If you want to manipulate the data instead of displaying it,
 see the @code{mem2array} primitives.)
 @end deffn
 
-@deffn Command {$target_name mww} addr word
-@deffnx Command {$target_name mwh} addr halfword
-@deffnx Command {$target_name mwb} addr byte
-Writes the specified @var{word} (32 bits),
-@var{halfword} (16 bits), or @var{byte} (8-bit) pattern,
+@deffn Command {$target_name mwd} [phys] addr doubleword [count]
+@deffnx Command {$target_name mww} [phys] addr word [count]
+@deffnx Command {$target_name mwh} [phys] addr halfword [count]
+@deffnx Command {$target_name mwb} [phys] addr byte [count]
+Writes the specified @var{doubleword} (64 bits), @var{word} (32 bits),
+@var{halfword} (16 bits), or @var{byte} (8-bit) value,
 at the specified address @var{addr}.
+When the current target has an MMU which is present and active,
+@var{addr} is interpreted as a virtual address.
+Otherwise, or if the optional @var{phys} flag is specified,
+@var{addr} is interpreted as a physical address.
+If @var{count} is specified, fills that many units of consecutive address.
 @end deffn
 
 @anchor{targetevents}
@@ -4908,7 +4926,6 @@ Use it in board specific configuration files, not interactively.
 @end quotation
 @end deffn
 
-@comment the REAL name for this command is "ocd_flash_banks"
 @comment less confusing would be: "flash list" (like "nand list")
 @deffn Command {flash banks}
 Prints a one-line summary of each device that was
@@ -7939,10 +7956,12 @@ Please use their TARGET object siblings to avoid making assumptions
 about what TAP is the current target, or about MMU configuration.
 @end enumerate
 
-@deffn Command mdw [phys] addr [count]
+@deffn Command mdd [phys] addr [count]
+@deffnx Command mdw [phys] addr [count]
 @deffnx Command mdh [phys] addr [count]
 @deffnx Command mdb [phys] addr [count]
 Display contents of address @var{addr}, as
+64-bit doublewords (@command{mdd}),
 32-bit words (@command{mdw}), 16-bit halfwords (@command{mdh}),
 or 8-bit bytes (@command{mdb}).
 When the current target has an MMU which is present and active,
@@ -7954,16 +7973,18 @@ If @var{count} is specified, displays that many units.
 see the @code{mem2array} primitives.)
 @end deffn
 
-@deffn Command mww [phys] addr word
-@deffnx Command mwh [phys] addr halfword
-@deffnx Command mwb [phys] addr byte
-Writes the specified @var{word} (32 bits),
+@deffn Command mwd [phys] addr doubleword [count]
+@deffnx Command mww [phys] addr word [count]
+@deffnx Command mwh [phys] addr halfword [count]
+@deffnx Command mwb [phys] addr byte [count]
+Writes the specified @var{doubleword} (64 bits), @var{word} (32 bits),
 @var{halfword} (16 bits), or @var{byte} (8-bit) value,
 at the specified address @var{addr}.
 When the current target has an MMU which is present and active,
 @var{addr} is interpreted as a virtual address.
 Otherwise, or if the optional @var{phys} flag is specified,
 @var{addr} is interpreted as a physical address.
+If @var{count} is specified, fills that many units of consecutive address.
 @end deffn
 
 @anchor{imageaccess}
@@ -8940,12 +8961,8 @@ Initialize core debug
 Enables debug by unlocking the Software Lock and clearing sticky powerdown indications
 @end deffn
 
-@deffn Command {cortex_a smp_off}
-Disable SMP mode
-@end deffn
-
-@deffn Command {cortex_a smp_on}
-Enable SMP mode
+@deffn Command {cortex_a smp} [on|off]
+Display/set the current SMP mode
 @end deffn
 
 @deffn Command {cortex_a smp_gdb} [core_id]
@@ -9076,7 +9093,7 @@ Enable or disable trace output for all ITM stimulus ports.
 @subsection Cortex-M specific commands
 @cindex Cortex-M
 
-@deffn Command {cortex_m maskisr} (@option{auto}|@option{on}|@option{off})
+@deffn Command {cortex_m maskisr} (@option{auto}|@option{on}|@option{off}|@option{steponly})
 Control masking (disabling) interrupts during target step/resume.
 
 The @option{auto} option handles interrupts during stepping in a way that they
@@ -9085,6 +9102,11 @@ pending interrupt handlers to execute, then disables interrupts and steps over
 the next instruction where the core was halted. After the step interrupts
 are enabled again. If the interrupt handlers don't complete within 500ms,
 the step command leaves with the core running.
+
+The @option{steponly} option disables interrupts during single-stepping but
+enables them during normal execution. This can be used as a partial workaround
+for 702596 erratum in Cortex-M7 r0p1. See "Cortex-M7 (AT610) and Cortex-M7 with
+FPU (AT611) Software Developer Errata Notice" from ARM for further details.
 
 Note that a free hardware (FPB) breakpoint is required for the @option{auto}
 option. If no breakpoint is available at the time of the step, then the step
@@ -9156,8 +9178,8 @@ target code relies on. In a configuration file, the command would typically be c
 However, normally it is not necessary to use the command at all.
 @end deffn
 
-@deffn Command {aarch64 smp_on|smp_off}
-Enable and disable SMP handling. The state of SMP handling influences the way targets in an SMP group
+@deffn Command {aarch64 smp} [on|off]
+Display, enable or disable SMP handling mode. The state of SMP handling influences the way targets in an SMP group
 are handled by the run control. With SMP handling enabled, issuing halt or resume to one core will trigger
 halting or resuming of all cores in the group. The command @code{target smp} defines which targets are in the SMP
 group. With SMP handling disabled, all targets need to be treated individually.
@@ -9345,6 +9367,14 @@ be copied to an in-memory buffer identified by the @option{address} and
 @option{size} options using DMA.
 @end deffn
 
+@deffn Command {$target_name catch_exc} [@option{off}|@option{sec_el1}|@option{sec_el3}|@option{nsec_el1}|@option{nsec_el2}]+
+Cause @command{$target_name} to halt when an exception is taken. Any combination of
+Secure (sec) EL1/EL3 or Non-Secure (nsec) EL1/EL2 is valid. The target
+@command{$target_name} will halt before taking the exception. In order to resume
+the target, the exception catch must be disabled again with @command{$target_name catch_exc off}.
+Issuing the command without options prints the current configuration.
+@end deffn
+
 @section Intel Architecture
 
 Intel Quark X10xx is the first product in the Quark family of SoCs. It is an IA-32
@@ -9458,6 +9488,14 @@ command can be used if OpenOCD gets this wrong, or a target implements custom
 CSRs.
 @end deffn
 
+@deffn Command {riscv expose_custom} n0[-m0][,n1[-m1]]...
+The RISC-V Debug Specification allows targets to expose custom registers
+through abstract commands. (See Section 3.5.1.1 in that document.) This command
+configures a list of inclusive ranges of those registers to expose. Number 0
+indicates the first custom register, whose abstract command number is 0xc000.
+This command must be executed before `init`.
+@end deffn
+
 @deffn Command {riscv set_command_timeout_sec} [seconds]
 Set the wall-clock timeout (in seconds) for individual commands. The default
 should work fine for all but the slowest targets (eg. simulators).
@@ -9478,19 +9516,29 @@ When on, prefer to use System Bus Access to access memory.  When off, prefer to
 use the Program Buffer to access memory.
 @end deffn
 
+@deffn Command {riscv set_ir} (@option{idcode}|@option{dtmcs}|@option{dmi}) [value]
+Set the IR value for the specified JTAG register.  This is useful, for
+example, when using the existing JTAG interface on a Xilinx FPGA by
+way of BSCANE2 primitives that only permit a limited selection of IR
+values.
+
+When utilizing version 0.11 of the RISC-V Debug Specification,
+@option{dtmcs} and @option{dmi} set the IR values for the DTMCONTROL
+and DBUS registers, respectively.
+@end deffn
+
 @subsection RISC-V Authentication Commands
 
 The following commands can be used to authenticate to a RISC-V system. Eg.  a
 trivial challenge-response protocol could be implemented as follows in a
 configuration file, immediately following @command{init}:
 @example
-set challenge [ocd_riscv authdata_read]
+set challenge [riscv authdata_read]
 riscv authdata_write [expr $challenge + 1]
 @end example
 
 @deffn Command {riscv authdata_read}
-Return the 32-bit value read from authdata. Note that to get read value back in
-a TCL script, it needs to be invoked as @command{ocd_riscv authdata_read}.
+Return the 32-bit value read from authdata.
 @end deffn
 
 @deffn Command {riscv authdata_write} value
@@ -9503,9 +9551,7 @@ The following commands allow direct access to the Debug Module Interface, which
 can be used to interact with custom debug features.
 
 @deffn Command {riscv dmi_read}
-Perform a 32-bit DMI read at address, returning the value.  Note that to get
-read value back in a TCL script, it needs to be invoked as @command{ocd_riscv
-dmi_read}.
+Perform a 32-bit DMI read at address, returning the value.
 @end deffn
 
 @deffn Command {riscv dmi_write} address value
@@ -10191,55 +10237,6 @@ and GDB would require stopping the target to get the prompt back.
 Do not use this mode under an IDE like Eclipse as it caches values of
 previously shown varibles.
 
-@anchor{usingopenocdsmpwithgdb}
-@section Using OpenOCD SMP with GDB
-@cindex SMP
-For SMP support following GDB serial protocol packet have been defined :
-@itemize @bullet
-@item j - smp status request
-@item J - smp set request
-@end itemize
-
-OpenOCD implements :
-@itemize @bullet
-@item @option{jc} packet for reading core id displayed by
-GDB connection. Reply is @option{XXXXXXXX} (8 hex digits giving core id) or
- @option{E01} for target not smp.
-@item @option{JcXXXXXXXX} (8 hex digits) packet for setting core id displayed at next GDB continue
-(core id -1 is reserved for returning to normal resume mode). Reply @option{E01}
-for target not smp or @option{OK} on success.
-@end itemize
-
-Handling of this packet within GDB can be done :
-@itemize @bullet
-@item by the creation of an internal variable (i.e @option{_core}) by mean
-of function allocate_computed_value allowing following GDB command.
-@example
-set $_core 1
-#Jc01 packet is sent
-print $_core
-#jc packet is sent and result is affected in $
-@end example
-
-@item by the usage of GDB maintenance command as described in following example (2 cpus in SMP with
-core id 0 and 1 @pxref{definecputargetsworkinginsmp,,Define CPU targets working in SMP}).
-
-@example
-# toggle0 : force display of coreid 0
-define toggle0
-maint packet Jc0
-continue
-main packet Jc-1
-end
-# toggle1 : force display of coreid 1
-define toggle1
-maint packet Jc1
-continue
-main packet Jc-1
-end
-@end example
-@end itemize
-
 @section RTOS Support
 @cindex RTOS Support
 @anchor{gdbrtossupport}
@@ -10270,12 +10267,11 @@ Currently supported rtos's include:
 @item @option{mqx}
 @item @option{uCOS-III}
 @item @option{nuttx}
+@item @option{hwthread} (This is not an actual RTOS. @xref{usingopenocdsmpwithgdb,,Using OpenOCD SMP with GDB}.)
 @end itemize
 
-@quotation Note
 Before an RTOS can be detected, it must export certain symbols; otherwise, it cannot
 be used by OpenOCD. Below is a list of the required symbols for each supported RTOS.
-@end quotation
 
 @table @code
 @item eCos symbols
@@ -10321,6 +10317,72 @@ contrib/rtos-helpers/FreeRTOS-openocd.c
 @item uC/OS-III
 contrib/rtos-helpers/uCOS-III-openocd.c
 @end table
+
+@anchor{usingopenocdsmpwithgdb}
+@section Using OpenOCD SMP with GDB
+@cindex SMP
+@cindex RTOS
+@cindex hwthread
+OpenOCD includes a pseudo RTOS called @emph{hwthread} that presents CPU cores
+("hardware threads") in an SMP system as threads to GDB. With this extension,
+GDB can be used to inspect the state of an SMP system in a natural way.
+After halting the system, using the GDB command @command{info threads} will
+list the context of each active CPU core in the system. GDB's @command{thread}
+command can be used to switch the view to a different CPU core.
+The @command{step} and @command{stepi} commands can be used to step a specific core
+while other cores are free-running or remain halted, depending on the
+scheduler-locking mode configured in GDB.
+
+@section Legacy SMP core switching support
+@quotation Note
+This method is deprecated in favor of the @emph{hwthread} pseudo RTOS.
+@end quotation
+
+For SMP support following GDB serial protocol packet have been defined :
+@itemize @bullet
+@item j - smp status request
+@item J - smp set request
+@end itemize
+
+OpenOCD implements :
+@itemize @bullet
+@item @option{jc} packet for reading core id displayed by
+GDB connection. Reply is @option{XXXXXXXX} (8 hex digits giving core id) or
+ @option{E01} for target not smp.
+@item @option{JcXXXXXXXX} (8 hex digits) packet for setting core id displayed at next GDB continue
+(core id -1 is reserved for returning to normal resume mode). Reply @option{E01}
+for target not smp or @option{OK} on success.
+@end itemize
+
+Handling of this packet within GDB can be done :
+@itemize @bullet
+@item by the creation of an internal variable (i.e @option{_core}) by mean
+of function allocate_computed_value allowing following GDB command.
+@example
+set $_core 1
+#Jc01 packet is sent
+print $_core
+#jc packet is sent and result is affected in $
+@end example
+
+@item by the usage of GDB maintenance command as described in following example (2 cpus in SMP with
+core id 0 and 1 @pxref{definecputargetsworkinginsmp,,Define CPU targets working in SMP}).
+
+@example
+# toggle0 : force display of coreid 0
+define toggle0
+maint packet Jc0
+continue
+main packet Jc-1
+end
+# toggle1 : force display of coreid 1
+define toggle1
+maint packet Jc1
+continue
+main packet Jc-1
+end
+@end example
+@end itemize
 
 @node Tcl Scripting API
 @chapter Tcl Scripting API
@@ -10373,10 +10435,6 @@ should be passed in to the proc in question.
 By "low-level," we mean commands that a human would typically not
 invoke directly.
 
-Some low-level commands need to be prefixed with "ocd_"; e.g.
-@command{ocd_flash_banks}
-is the low-level API upon which @command{flash banks} is implemented.
-
 @itemize @bullet
 @item @b{mem2array} <@var{varname}> <@var{width}> <@var{addr}> <@var{nelems}>
 
@@ -10384,7 +10442,7 @@ Read memory and return as a Tcl array for script processing
 @item @b{array2mem} <@var{varname}> <@var{width}> <@var{addr}> <@var{nelems}>
 
 Convert a Tcl array to memory locations and write the values
-@item @b{ocd_flash_banks} <@var{driver}> <@var{base}> <@var{size}> <@var{chip_width}> <@var{bus_width}> <@var{target}> [@option{driver options} ...]
+@item @b{flash banks} <@var{driver}> <@var{base}> <@var{size}> <@var{chip_width}> <@var{bus_width}> <@var{target}> [@option{driver options} ...]
 
 Return information about the flash banks
 
@@ -10443,8 +10501,8 @@ interpreter terminating it with @code{0x1a} and wait for the return
 value (it will be terminated with @code{0x1a} as well). This can be
 repeated as many times as desired without reopening the connection.
 
-Remember that most of the OpenOCD commands need to be prefixed with
-@code{ocd_} to get the results back. Sometimes you might also need the
+It is not needed anymore to prefix the OpenOCD commands with
+@code{ocd_} to get the results back. But sometimes you might need the
 @command{capture} command.
 
 See @file{contrib/rpc_examples/} for specific client implementations.

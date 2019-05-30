@@ -84,7 +84,8 @@ enum target_debug_reason {
 	DBG_REASON_SINGLESTEP = 4,
 	DBG_REASON_NOTHALTED = 5,
 	DBG_REASON_EXIT = 6,
-	DBG_REASON_UNDEFINED = 7,
+	DBG_REASON_EXC_CATCH = 7,
+	DBG_REASON_UNDEFINED = 8,
 };
 
 enum target_endianness {
@@ -290,7 +291,6 @@ struct target_event_action {
 	enum target_event event;
 	struct Jim_Interp *interp;
 	struct Jim_Obj *body;
-	int has_percent;
 	struct target_event_action *next;
 };
 
@@ -641,7 +641,17 @@ int target_get_gdb_fileio_info(struct target *target, struct gdb_fileio_info *fi
  */
 int target_gdb_fileio_end(struct target *target, int retcode, int fileio_errno, bool ctrl_c);
 
+/**
+ * Return the highest accessible address for this target.
+ */
+target_addr_t target_address_max(struct target *target);
 
+/**
+ * Return the number of address bits this target supports.
+ *
+ * This routine is a wrapper for target->type->address_bits.
+ */
+unsigned target_address_bits(struct target *target);
 
 /** Return the *name* of this targets current state */
 const char *target_state_name(struct target *target);

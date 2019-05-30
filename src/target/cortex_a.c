@@ -56,10 +56,8 @@
 #include "arm_opcodes.h"
 #include "arm_semihosting.h"
 #include "transport/transport.h"
+#include "smp.h"
 #include <helper/time_support.h>
-
-#define foreach_smp_target(pos, head) \
-	for (pos = head; (pos != NULL); pos = pos->next)
 
 static int cortex_a_poll(struct target *target);
 static int cortex_a_debug_entry(struct target *target);
@@ -72,6 +70,8 @@ static int cortex_a_set_hybrid_breakpoint(struct target *target,
 	struct breakpoint *breakpoint);
 static int cortex_a_unset_breakpoint(struct target *target,
 	struct breakpoint *breakpoint);
+static int cortex_a_wait_dscr_bits(struct target *target, uint32_t mask,
+	uint32_t value, uint32_t *dscr);
 static int cortex_a_mmu(struct target *target, int *enabled);
 static int cortex_a_mmu_modify(struct target *target, int enable);
 static int cortex_a_virt2phys(struct target *target,
@@ -252,21 +252,21 @@ static int cortex_a_wait_instrcmpl(struct target *target, uint32_t *dscr, bool f
 	 * Writes final value of DSCR into *dscr. Pass force to force always
 	 * reading DSCR at least once. */
 	struct armv7a_common *armv7a = target_to_armv7a(target);
-	int64_t then = timeval_ms();
-	while ((*dscr & DSCR_INSTR_COMP) == 0 || force) {
-		force = false;
-		int retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
+	int retval;
+
+	if (force) {
+		retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
 				armv7a->debug_base + CPUDBG_DSCR, dscr);
 		if (retval != ERROR_OK) {
 			LOG_ERROR("Could not read DSCR register");
 			return retval;
 		}
-		if (timeval_ms() > then + 1000) {
-			LOG_ERROR("Timeout waiting for InstrCompl=1");
-			return ERROR_FAIL;
-		}
 	}
-	return ERROR_OK;
+
+	retval = cortex_a_wait_dscr_bits(target, DSCR_INSTR_COMP, DSCR_INSTR_COMP, dscr);
+	if (retval != ERROR_OK)
+		LOG_ERROR("Error waiting for InstrCompl=1");
+	return retval;
 }
 
 /* To reduce needless round-trips, pass in a pointer to the current
@@ -295,19 +295,12 @@ static int cortex_a_exec_opcode(struct target *target,
 	if (retval != ERROR_OK)
 		return retval;
 
-	int64_t then = timeval_ms();
-	do {
-		retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-				armv7a->debug_base + CPUDBG_DSCR, &dscr);
-		if (retval != ERROR_OK) {
-			LOG_ERROR("Could not read DSCR register");
-			return retval;
-		}
-		if (timeval_ms() > then + 1000) {
-			LOG_ERROR("Timeout waiting for cortex_a_exec_opcode");
-			return ERROR_FAIL;
-		}
-	} while ((dscr & DSCR_INSTR_COMP) == 0);	/* Wait for InstrCompl bit to be set */
+	/* Wait for InstrCompl bit to be set */
+	retval = cortex_a_wait_instrcmpl(target, &dscr, true);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error waiting for cortex_a_exec_opcode");
+		return retval;
+	}
 
 	if (dscr_p)
 		*dscr_p = dscr;
@@ -361,17 +354,11 @@ static int cortex_a_read_dcc(struct cortex_a_common *a, uint32_t *data,
 		dscr = *dscr_p;
 
 	/* Wait for DTRRXfull */
-	int64_t then = timeval_ms();
-	while ((dscr & DSCR_DTR_TX_FULL) == 0) {
-		retval = mem_ap_read_atomic_u32(a->armv7a_common.debug_ap,
-				a->armv7a_common.debug_base + CPUDBG_DSCR,
-				&dscr);
-		if (retval != ERROR_OK)
-			return retval;
-		if (timeval_ms() > then + 1000) {
-			LOG_ERROR("Timeout waiting for read dcc");
-			return ERROR_FAIL;
-		}
+	retval = cortex_a_wait_dscr_bits(a->armv7a_common.arm.target,
+			DSCR_DTR_TX_FULL, DSCR_DTR_TX_FULL, &dscr);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error waiting for read dcc");
+		return retval;
 	}
 
 	retval = mem_ap_read_atomic_u32(a->armv7a_common.debug_ap,
@@ -393,19 +380,10 @@ static int cortex_a_dpm_prepare(struct arm_dpm *dpm)
 	int retval;
 
 	/* set up invariant:  INSTR_COMP is set after ever DPM operation */
-	int64_t then = timeval_ms();
-	for (;; ) {
-		retval = mem_ap_read_atomic_u32(a->armv7a_common.debug_ap,
-				a->armv7a_common.debug_base + CPUDBG_DSCR,
-				&dscr);
-		if (retval != ERROR_OK)
-			return retval;
-		if ((dscr & DSCR_INSTR_COMP) != 0)
-			break;
-		if (timeval_ms() > then + 1000) {
-			LOG_ERROR("Timeout waiting for dpm prepare");
-			return ERROR_FAIL;
-		}
+	retval = cortex_a_wait_instrcmpl(dpm->arm->target, &dscr, true);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error waiting for dpm prepare");
+		return retval;
 	}
 
 	/* this "should never happen" ... */
@@ -754,7 +732,7 @@ static int cortex_a_poll(struct target *target)
 
 static int cortex_a_halt(struct target *target)
 {
-	int retval = ERROR_OK;
+	int retval;
 	uint32_t dscr;
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 
@@ -767,18 +745,12 @@ static int cortex_a_halt(struct target *target)
 	if (retval != ERROR_OK)
 		return retval;
 
-	int64_t then = timeval_ms();
-	for (;; ) {
-		retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-				armv7a->debug_base + CPUDBG_DSCR, &dscr);
-		if (retval != ERROR_OK)
-			return retval;
-		if ((dscr & DSCR_CORE_HALTED) != 0)
-			break;
-		if (timeval_ms() > then + 1000) {
-			LOG_ERROR("Timeout waiting for halt");
-			return ERROR_FAIL;
-		}
+	dscr = 0; /* force read of dscr */
+	retval = cortex_a_wait_dscr_bits(target, DSCR_CORE_HALTED,
+			DSCR_CORE_HALTED, &dscr);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error waiting for halt");
+		return retval;
 	}
 
 	target->debug_reason = DBG_REASON_DBGRQ;
@@ -806,15 +778,15 @@ static int cortex_a_internal_restore(struct target *target, int current,
 		 * C_MASKINTS in parallel with disabled interrupts can cause
 		 * local faults to not be taken. */
 		buf_set_u32(armv7m->core_cache->reg_list[ARMV7M_PRIMASK].value, 0, 32, 1);
-		armv7m->core_cache->reg_list[ARMV7M_PRIMASK].dirty = 1;
-		armv7m->core_cache->reg_list[ARMV7M_PRIMASK].valid = 1;
+		armv7m->core_cache->reg_list[ARMV7M_PRIMASK].dirty = true;
+		armv7m->core_cache->reg_list[ARMV7M_PRIMASK].valid = true;
 
 		/* Make sure we are in Thumb mode */
 		buf_set_u32(armv7m->core_cache->reg_list[ARMV7M_xPSR].value, 0, 32,
 			buf_get_u32(armv7m->core_cache->reg_list[ARMV7M_xPSR].value, 0,
 			32) | (1 << 24));
-		armv7m->core_cache->reg_list[ARMV7M_xPSR].dirty = 1;
-		armv7m->core_cache->reg_list[ARMV7M_xPSR].valid = 1;
+		armv7m->core_cache->reg_list[ARMV7M_xPSR].dirty = true;
+		armv7m->core_cache->reg_list[ARMV7M_xPSR].valid = true;
 	}
 #endif
 
@@ -848,8 +820,8 @@ static int cortex_a_internal_restore(struct target *target, int current,
 	}
 	LOG_DEBUG("resume pc = 0x%08" PRIx32, resume_pc);
 	buf_set_u32(arm->pc->value, 0, 32, resume_pc);
-	arm->pc->dirty = 1;
-	arm->pc->valid = 1;
+	arm->pc->dirty = true;
+	arm->pc->valid = true;
 
 	/* restore dpm_mode at system halt */
 	arm_dpm_modeswitch(&armv7a->dpm, ARM_MODE_ANY);
@@ -917,18 +889,12 @@ static int cortex_a_internal_restart(struct target *target)
 	if (retval != ERROR_OK)
 		return retval;
 
-	int64_t then = timeval_ms();
-	for (;; ) {
-		retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
-				armv7a->debug_base + CPUDBG_DSCR, &dscr);
-		if (retval != ERROR_OK)
-			return retval;
-		if ((dscr & DSCR_CORE_RESTARTED) != 0)
-			break;
-		if (timeval_ms() > then + 1000) {
-			LOG_ERROR("Timeout waiting for resume");
-			return ERROR_FAIL;
-		}
+	dscr = 0; /* force read of dscr */
+	retval = cortex_a_wait_dscr_bits(target, DSCR_CORE_RESTARTED,
+			DSCR_CORE_RESTARTED, &dscr);
+	if (retval != ERROR_OK) {
+		LOG_ERROR("Error waiting for resume");
+		return retval;
 	}
 
 	target->debug_reason = DBG_REASON_NOTHALTED;
@@ -1208,6 +1174,8 @@ static int cortex_a_step(struct target *target, int current, target_addr_t addre
 		retval = cortex_a_poll(target);
 		if (retval != ERROR_OK)
 			return retval;
+		if (target->state == TARGET_HALTED)
+			break;
 		if (timeval_ms() > then + 1000) {
 			LOG_ERROR("timeout waiting for target halt");
 			return ERROR_FAIL;
@@ -1765,14 +1733,22 @@ static int cortex_a_wait_dscr_bits(struct target *target, uint32_t mask,
 {
 	/* Waits until the specified bit(s) of DSCR take on a specified value. */
 	struct armv7a_common *armv7a = target_to_armv7a(target);
-	int64_t then = timeval_ms();
+	int64_t then;
 	int retval;
 
-	while ((*dscr & mask) != value) {
+	if ((*dscr & mask) == value)
+		return ERROR_OK;
+
+	then = timeval_ms();
+	while (1) {
 		retval = mem_ap_read_atomic_u32(armv7a->debug_ap,
 				armv7a->debug_base + CPUDBG_DSCR, dscr);
-		if (retval != ERROR_OK)
+		if (retval != ERROR_OK) {
+			LOG_ERROR("Could not read DSCR register");
 			return retval;
+		}
+		if ((*dscr & mask) == value)
+			break;
 		if (timeval_ms() > then + 1000) {
 			LOG_ERROR("timeout waiting for DSCR bit change");
 			return ERROR_FAIL;
@@ -2954,7 +2930,7 @@ COMMAND_HANDLER(cortex_a_handle_cache_info_command)
 	struct target *target = get_current_target(CMD_CTX);
 	struct armv7a_common *armv7a = target_to_armv7a(target);
 
-	return armv7a_handle_cache_info_command(CMD_CTX,
+	return armv7a_handle_cache_info_command(CMD,
 			&armv7a->armv7a_mmu.armv7a_cache);
 }
 
@@ -2968,63 +2944,6 @@ COMMAND_HANDLER(cortex_a_handle_dbginit_command)
 	}
 
 	return cortex_a_init_debug_access(target);
-}
-COMMAND_HANDLER(cortex_a_handle_smp_off_command)
-{
-	struct target *target = get_current_target(CMD_CTX);
-	/* check target is an smp target */
-	struct target_list *head;
-	struct target *curr;
-	head = target->head;
-	target->smp = 0;
-	if (head != (struct target_list *)NULL) {
-		while (head != (struct target_list *)NULL) {
-			curr = head->target;
-			curr->smp = 0;
-			head = head->next;
-		}
-		/*  fixes the target display to the debugger */
-		target->gdb_service->target = target;
-	}
-	return ERROR_OK;
-}
-
-COMMAND_HANDLER(cortex_a_handle_smp_on_command)
-{
-	struct target *target = get_current_target(CMD_CTX);
-	struct target_list *head;
-	struct target *curr;
-	head = target->head;
-	if (head != (struct target_list *)NULL) {
-		target->smp = 1;
-		while (head != (struct target_list *)NULL) {
-			curr = head->target;
-			curr->smp = 1;
-			head = head->next;
-		}
-	}
-	return ERROR_OK;
-}
-
-COMMAND_HANDLER(cortex_a_handle_smp_gdb_command)
-{
-	struct target *target = get_current_target(CMD_CTX);
-	int retval = ERROR_OK;
-	struct target_list *head;
-	head = target->head;
-	if (head != (struct target_list *)NULL) {
-		if (CMD_ARGC == 1) {
-			int coreid = 0;
-			COMMAND_PARSE_NUMBER(int, CMD_ARGV[0], coreid);
-			if (ERROR_OK != retval)
-				return retval;
-			target->gdb_service->core[1] = coreid;
-
-		}
-		command_print(CMD_CTX, "gdb coreid  %" PRId32 " -> %" PRId32, target->gdb_service->core[0]
-			, target->gdb_service->core[1]);
-	}
-	return ERROR_OK;
 }
 
 COMMAND_HANDLER(handle_cortex_a_mask_interrupts_command)
@@ -3050,7 +2969,7 @@ COMMAND_HANDLER(handle_cortex_a_mask_interrupts_command)
 	}
 
 	n = Jim_Nvp_value2name_simple(nvp_maskisr_modes, cortex_a->isrmasking_mode);
-	command_print(CMD_CTX, "cortex_a interrupt mask %s", n->name);
+	command_print(CMD, "cortex_a interrupt mask %s", n->name);
 
 	return ERROR_OK;
 }
@@ -3076,7 +2995,7 @@ COMMAND_HANDLER(handle_cortex_a_dacrfixup_command)
 	}
 
 	n = Jim_Nvp_value2name_simple(nvp_dacrfixup_modes, cortex_a->dacrfixup_mode);
-	command_print(CMD_CTX, "cortex_a domain access control fixup %s", n->name);
+	command_print(CMD, "cortex_a domain access control fixup %s", n->name);
 
 	return ERROR_OK;
 }
@@ -3096,25 +3015,6 @@ static const struct command_registration cortex_a_exec_command_handlers[] = {
 		.help = "Initialize core debug",
 		.usage = "",
 	},
-	{   .name = "smp_off",
-	    .handler = cortex_a_handle_smp_off_command,
-	    .mode = COMMAND_EXEC,
-	    .help = "Stop smp handling",
-	    .usage = "",},
-	{
-		.name = "smp_on",
-		.handler = cortex_a_handle_smp_on_command,
-		.mode = COMMAND_EXEC,
-		.help = "Restart smp handling",
-		.usage = "",
-	},
-	{
-		.name = "smp_gdb",
-		.handler = cortex_a_handle_smp_gdb_command,
-		.mode = COMMAND_EXEC,
-		.help = "display/fix current core played to gdb",
-		.usage = "",
-	},
 	{
 		.name = "maskisr",
 		.handler = handle_cortex_a_mask_interrupts_command,
@@ -3132,6 +3032,9 @@ static const struct command_registration cortex_a_exec_command_handlers[] = {
 	},
 	{
 		.chain = armv7a_mmu_command_handlers,
+	},
+	{
+		.chain = smp_command_handlers,
 	},
 
 	COMMAND_REGISTRATION_DONE

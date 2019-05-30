@@ -136,14 +136,14 @@
 #define FPCR_REPLACE_BKPT_BOTH  (3 << 30)
 
 struct cortex_m_fp_comparator {
-	int used;
+	bool used;
 	int type;
 	uint32_t fpcr_value;
 	uint32_t fpcr_address;
 };
 
 struct cortex_m_dwt_comparator {
-	int used;
+	bool used;
 	uint32_t comp;
 	uint32_t mask;
 	uint32_t function;
@@ -159,6 +159,7 @@ enum cortex_m_isrmasking_mode {
 	CORTEX_M_ISRMASK_AUTO,
 	CORTEX_M_ISRMASK_OFF,
 	CORTEX_M_ISRMASK_ON,
+	CORTEX_M_ISRMASK_STEPONLY,
 };
 
 struct cortex_m_common {
@@ -172,9 +173,8 @@ struct cortex_m_common {
 	/* Flash Patch and Breakpoint (FPB) */
 	int fp_num_lit;
 	int fp_num_code;
-	int fp_code_available;
 	int fp_rev;
-	int fpb_enabled;
+	bool fpb_enabled;
 	struct cortex_m_fp_comparator *fp_comparator_list;
 
 	/* Data Watchpoint and Trace (DWT) */
@@ -191,6 +191,10 @@ struct cortex_m_common {
 	struct armv7m_common armv7m;
 
 	int apsel;
+
+	/* Whether this target has the erratum that makes C_MASKINTS not apply to
+	 * already pending interrupts */
+	bool maskints_erratum;
 };
 
 static inline struct cortex_m_common *

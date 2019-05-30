@@ -1093,7 +1093,7 @@ COMMAND_HANDLER(efm32x_handle_debuglock_command)
 		return retval;
 	}
 
-	command_print(CMD_CTX, "efm32x debug interface locked, reset the device to apply");
+	command_print(CMD, "efm32x debug interface locked, reset the device to apply");
 
 	return ERROR_OK;
 }
@@ -1120,7 +1120,7 @@ static const struct command_registration efm32x_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-struct flash_driver efm32_flash = {
+const struct flash_driver efm32_flash = {
 	.name = "efm32",
 	.commands = efm32x_command_handlers,
 	.flash_bank_command = efm32x_flash_bank_command,

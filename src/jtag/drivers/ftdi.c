@@ -53,11 +53,11 @@
  *
  * This code uses information contained in the MPSSE specification which was
  * found here:
- * http://www.ftdichip.com/Documents/AppNotes/AN2232C-01_MPSSE_Cmnd.pdf
+ * https://www.ftdichip.com/Support/Documents/AppNotes/AN2232C-01_MPSSE_Cmnd.pdf
  * Hereafter this is called the "MPSSE Spec".
  *
- * The datasheet for the ftdichip.com's FT2232D part is here:
- * http://www.ftdichip.com/Documents/DataSheets/DS_FT2232D.pdf
+ * The datasheet for the ftdichip.com's FT2232H part is here:
+ * https://www.ftdichip.com/Support/Documents/DataSheets/ICs/DS_FT2232H.pdf
  *
  * Also note the issue with code 0x4b (clock data to TMS) noted in
  * http://developer.intra2net.com/mailarchive/html/libftdi/2009/msg00292.html
@@ -930,7 +930,7 @@ COMMAND_HANDLER(ftdi_handle_tdo_sample_edge_command)
 	}
 
 	n = Jim_Nvp_value2name_simple(nvp_ftdi_jtag_modes, ftdi_jtag_mode);
-	command_print(CMD_CTX, "ftdi samples TDO on %s edge of TCK", n->name);
+	command_print(CMD, "ftdi samples TDO on %s edge of TCK", n->name);
 
 	return ERROR_OK;
 }
@@ -1055,7 +1055,7 @@ static void ftdi_swd_swdio_en(bool enable)
 		if (oe->data_mask)
 			ftdi_set_signal(oe, enable ? '1' : '0');
 		else {
-			/* Sets TDI/DO pin (pin 2) to input during rx when both pins are connected
+			/* Sets TDI/DO pin to input during rx when both pins are connected
 			   to SWDIO */
 			if (enable)
 				direction |= jtag_direction_init & 0x0002U;

@@ -730,9 +730,8 @@ free_pb:
 FLASH_BANK_COMMAND_HANDLER(same5_flash_bank_command)
 {
 	if (bank->base != SAMD_FLASH) {
-		LOG_ERROR("Address 0x%08" PRIx32 " invalid bank address (try 0x%08" PRIx32
-				"[same5] )",
-				bank->base, SAMD_FLASH);
+		LOG_ERROR("Address " TARGET_ADDR_FMT " invalid bank address (try "
+			"0x%08" PRIx32 "[same5] )", bank->base, SAMD_FLASH);
 		return ERROR_FAIL;
 	}
 
@@ -766,9 +765,9 @@ COMMAND_HANDLER(same5_handle_chip_erase_command)
 	 * perform the erase. */
 	int res = target_write_u8(target, SAMD_DSU + SAMD_DSU_CTRL_EXT, (1<<4));
 	if (res == ERROR_OK)
-		command_print(CMD_CTX, "chip erase started");
+		command_print(CMD, "chip erase started");
 	else
-		command_print(CMD_CTX, "write to DSU CTRL failed");
+		command_print(CMD, "write to DSU CTRL failed");
 
 	return res;
 }
@@ -782,7 +781,7 @@ COMMAND_HANDLER(same5_handle_userpage_command)
 		return ERROR_FAIL;
 
 	if (CMD_ARGC > 2) {
-		command_print(CMD_CTX, "Too much Arguments given.");
+		command_print(CMD, "Too much Arguments given.");
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	}
 
@@ -807,7 +806,7 @@ COMMAND_HANDLER(same5_handle_userpage_command)
 	int res2 = target_read_memory(target, SAMD_USER_ROW, 4, 2, buffer);
 	if (res2 == ERROR_OK) {
 		uint64_t value = target_buffer_get_u64(target, buffer);
-		command_print(CMD_CTX, "USER PAGE: 0x%016"PRIX64, value);
+		command_print(CMD, "USER PAGE: 0x%016"PRIX64, value);
 	} else {
 		LOG_ERROR("USER PAGE could not be read.");
 	}
@@ -830,7 +829,7 @@ COMMAND_HANDLER(same5_handle_bootloader_command)
 		unsigned long size = strtoul(CMD_ARGV[0], NULL, 0);
 		uint32_t code = (size + 8191) / 8192;
 		if (code > 15) {
-			command_print(CMD_CTX, "Invalid bootloader size.  Please "
+			command_print(CMD, "Invalid bootloader size.  Please "
 						"see datasheet for a list valid sizes.");
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		}
@@ -843,7 +842,7 @@ COMMAND_HANDLER(same5_handle_bootloader_command)
 	if (res2 == ERROR_OK) {
 		uint32_t code = (val >> 26) & 0xf; /* grab size code */
 		uint32_t size = (15 - code) * 8192;
-		command_print(CMD_CTX, "Bootloader protected in the first %"
+		command_print(CMD, "Bootloader protected in the first %"
 				      PRIu32 " bytes", size);
 	}
 
@@ -894,12 +893,14 @@ COMMAND_HANDLER(samd_handle_reset_deassert)
 static const struct command_registration same5_exec_command_handlers[] = {
 	{
 		.name = "dsu_reset_deassert",
+		.usage = "",
 		.handler = samd_handle_reset_deassert,
 		.mode = COMMAND_EXEC,
-		.help = "Deasert internal reset held by DSU."
+		.help = "Deassert internal reset held by DSU."
 	},
 	{
 		.name = "chip-erase",
+		.usage = "",
 		.handler = same5_handle_chip_erase_command,
 		.mode = COMMAND_EXEC,
 		.help = "Erase the entire Flash by using the Chip-"
@@ -939,7 +940,7 @@ static const struct command_registration same5_command_handlers[] = {
 	COMMAND_REGISTRATION_DONE
 };
 
-struct flash_driver atsame5_flash = {
+const struct flash_driver atsame5_flash = {
 	.name = "atsame5",
 	.commands = same5_command_handlers,
 	.flash_bank_command = same5_flash_bank_command,
