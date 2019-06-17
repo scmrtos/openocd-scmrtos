@@ -375,12 +375,6 @@ uint16_t target_buffer_get_u16(struct target *target, const uint8_t *buffer)
 		return be_to_h_u16(buffer);
 }
 
-/* read a uint8_t from a buffer in target memory endianness */
-static __attribute__((unused)) uint8_t target_buffer_get_u8(struct target *target, const uint8_t *buffer)
-{
-	return *buffer & 0x0ff;
-}
-
 /* write a uint64_t to a buffer in target memory endianness */
 void target_buffer_set_u64(struct target *target, uint8_t *buffer, uint64_t value)
 {
@@ -3125,7 +3119,7 @@ COMMAND_HANDLER(handle_step_command)
 	return target->type->step(target, current_pc, addr, 1);
 }
 
-static void handle_md_output(struct command_invocation *cmd,
+void target_handle_md_output(struct command_invocation *cmd,
 		struct target *target, target_addr_t address, unsigned size,
 		unsigned count, const uint8_t *buffer)
 {
@@ -3240,7 +3234,7 @@ COMMAND_HANDLER(handle_md_command)
 	struct target *target = get_current_target(CMD_CTX);
 	int retval = fn(target, address, size, count, buffer);
 	if (ERROR_OK == retval)
-		handle_md_output(CMD, target, address, size, count, buffer);
+		target_handle_md_output(CMD, target, address, size, count, buffer);
 
 	free(buffer);
 
@@ -4532,6 +4526,7 @@ static int target_array2mem(Jim_Interp *interp, struct target *target,
 void target_handle_event(struct target *target, enum target_event e)
 {
 	struct target_event_action *teap;
+	int retval;
 
 	for (teap = target->event_action; teap != NULL; teap = teap->next) {
 		if (teap->event == e) {
@@ -4550,8 +4545,12 @@ void target_handle_event(struct target *target, enum target_event e)
 			struct command_context *cmd_ctx = current_command_context(teap->interp);
 			struct target *saved_target_override = cmd_ctx->current_target_override;
 			cmd_ctx->current_target_override = target;
+			retval = Jim_EvalObj(teap->interp, teap->body);
 
-			if (Jim_EvalObj(teap->interp, teap->body) != JIM_OK) {
+			if (retval == JIM_RETURN)
+				retval = teap->interp->returnCode;
+
+			if (retval != JIM_OK) {
 				Jim_MakeErrorMessage(teap->interp);
 				LOG_USER("Error executing event %s on target %s:\n%s",
 						  Jim_Nvp_value2name_simple(nvp_target_event, e)->name,
@@ -4899,6 +4898,12 @@ no_params:
 
 		case TCFG_GDB_PORT:
 			if (goi->isconfigure) {
+				struct command_context *cmd_ctx = current_command_context(goi->interp);
+				if (cmd_ctx->mode != COMMAND_CONFIG) {
+					Jim_SetResultString(goi->interp, "-gdb-port must be configured before 'init'", -1);
+					return JIM_ERR;
+				}
+
 				const char *s;
 				e = Jim_GetOpt_String(goi, &s, NULL);
 				if (e != JIM_OK)
@@ -5200,7 +5205,7 @@ static int jim_target_invoke_event(Jim_Interp *interp, int argc, Jim_Obj *const 
 static const struct command_registration target_instance_command_handlers[] = {
 	{
 		.name = "configure",
-		.mode = COMMAND_CONFIG,
+		.mode = COMMAND_ANY,
 		.jim_handler = jim_target_configure,
 		.help  = "configure a new target for use",
 		.usage = "[target_attribute ...]",

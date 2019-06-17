@@ -38,6 +38,7 @@
 #include <jtag/interface.h>
 #include <jtag/swd.h>
 #include <jtag/commands.h>
+#include <jtag/drivers/jtag_usb_common.h>
 
 #include <libjaylink/libjaylink.h>
 
@@ -50,6 +51,7 @@ static uint8_t caps[JAYLINK_DEV_EXT_CAPS_SIZE];
 
 static uint32_t serial_number;
 static bool use_serial_number;
+static bool use_usb_location;
 static enum jaylink_usb_address usb_address;
 static bool use_usb_address;
 static enum jaylink_target_interface iface = JAYLINK_TIF_JTAG;
@@ -122,13 +124,13 @@ static int queued_retval;
 
 static void jlink_execute_stableclocks(struct jtag_command *cmd)
 {
-	DEBUG_JTAG_IO("stableclocks %i cycles", cmd->cmd.runtest->num_cycles);
+	LOG_DEBUG_IO("stableclocks %i cycles", cmd->cmd.runtest->num_cycles);
 	jlink_stableclocks(cmd->cmd.runtest->num_cycles);
 }
 
 static void jlink_execute_runtest(struct jtag_command *cmd)
 {
-	DEBUG_JTAG_IO("runtest %i cycles, end in %i", cmd->cmd.runtest->num_cycles,
+	LOG_DEBUG_IO("runtest %i cycles, end in %i", cmd->cmd.runtest->num_cycles,
 		cmd->cmd.runtest->end_state);
 
 	jlink_end_state(cmd->cmd.runtest->end_state);
@@ -137,7 +139,7 @@ static void jlink_execute_runtest(struct jtag_command *cmd)
 
 static void jlink_execute_statemove(struct jtag_command *cmd)
 {
-	DEBUG_JTAG_IO("statemove end in %i", cmd->cmd.statemove->end_state);
+	LOG_DEBUG_IO("statemove end in %i", cmd->cmd.statemove->end_state);
 
 	jlink_end_state(cmd->cmd.statemove->end_state);
 	jlink_state_move();
@@ -145,7 +147,7 @@ static void jlink_execute_statemove(struct jtag_command *cmd)
 
 static void jlink_execute_pathmove(struct jtag_command *cmd)
 {
-	DEBUG_JTAG_IO("pathmove: %i states, end in %i",
+	LOG_DEBUG_IO("pathmove: %i states, end in %i",
 		cmd->cmd.pathmove->num_states,
 		cmd->cmd.pathmove->path[cmd->cmd.pathmove->num_states - 1]);
 
@@ -154,7 +156,7 @@ static void jlink_execute_pathmove(struct jtag_command *cmd)
 
 static void jlink_execute_scan(struct jtag_command *cmd)
 {
-	DEBUG_JTAG_IO("%s type:%d", cmd->cmd.scan->ir_scan ? "IRSCAN" : "DRSCAN",
+	LOG_DEBUG_IO("%s type:%d", cmd->cmd.scan->ir_scan ? "IRSCAN" : "DRSCAN",
 		jtag_scan_type(cmd->cmd.scan));
 
 	/* Make sure there are no trailing fields with num_bits == 0, or the logic below will fail. */
@@ -188,7 +190,7 @@ static void jlink_execute_scan(struct jtag_command *cmd)
 
 	for (int i = 0; i < cmd->cmd.scan->num_fields; i++, field++) {
 		scan_size += field->num_bits;
-		DEBUG_JTAG_IO("%s%s field %d/%d %d bits",
+		LOG_DEBUG_IO("%s%s field %d/%d %d bits",
 			field->in_value ? "in" : "",
 			field->out_value ? "out" : "",
 			i,
@@ -240,14 +242,14 @@ static void jlink_execute_scan(struct jtag_command *cmd)
 		jlink_state_move();
 	}
 
-	DEBUG_JTAG_IO("%s scan, %i bits, end in %s",
+	LOG_DEBUG_IO("%s scan, %i bits, end in %s",
 		(cmd->cmd.scan->ir_scan) ? "IR" : "DR", scan_size,
 		tap_state_name(tap_get_end_state()));
 }
 
 static void jlink_execute_reset(struct jtag_command *cmd)
 {
-	DEBUG_JTAG_IO("reset trst: %i srst %i", cmd->cmd.reset->trst,
+	LOG_DEBUG_IO("reset trst: %i srst %i", cmd->cmd.reset->trst,
 		cmd->cmd.reset->srst);
 
 	jlink_flush();
@@ -257,7 +259,7 @@ static void jlink_execute_reset(struct jtag_command *cmd)
 
 static void jlink_execute_sleep(struct jtag_command *cmd)
 {
-	DEBUG_JTAG_IO("sleep %" PRIi32 "", cmd->cmd.sleep->us);
+	LOG_DEBUG_IO("sleep %" PRIi32 "", cmd->cmd.sleep->us);
 	jlink_flush();
 	jtag_sleep(cmd->cmd.sleep->us);
 }
@@ -534,6 +536,31 @@ static int jaylink_log_handler(const struct jaylink_context *ctx,
 	return 0;
 }
 
+static bool jlink_usb_location_equal(struct jaylink_device *dev)
+{
+	int retval;
+	uint8_t bus;
+	uint8_t *ports;
+	size_t num_ports;
+	bool equal = false;
+
+	retval = jaylink_device_get_usb_bus_ports(dev, &bus, &ports, &num_ports);
+
+	if (retval == JAYLINK_ERR_NOT_SUPPORTED) {
+		return false;
+	} else if (retval != JAYLINK_OK) {
+		LOG_WARNING("jaylink_device_get_usb_bus_ports() failed: %s.",
+			jaylink_strerror(retval));
+		return false;
+	}
+
+	equal = jtag_usb_location_equal(bus, ports,	num_ports);
+	free(ports);
+
+	return equal;
+}
+
+
 static int jlink_init(void)
 {
 	int ret;
@@ -595,7 +622,9 @@ static int jlink_init(void)
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
-	if (!use_serial_number && !use_usb_address && num_devices > 1) {
+	use_usb_location = (jtag_usb_get_location() != NULL);
+
+	if (!use_serial_number && !use_usb_address && !use_usb_location && num_devices > 1) {
 		LOG_ERROR("Multiple devices found, specify the desired device.");
 		jaylink_free_devices(devs, true);
 		jaylink_exit(jayctx);
@@ -605,8 +634,10 @@ static int jlink_init(void)
 	found_device = false;
 
 	for (i = 0; devs[i]; i++) {
+		struct jaylink_device *dev = devs[i];
+
 		if (use_serial_number) {
-			ret = jaylink_device_get_serial_number(devs[i], &tmp);
+			ret = jaylink_device_get_serial_number(dev, &tmp);
 
 			if (ret == JAYLINK_ERR_NOT_AVAILABLE) {
 				continue;
@@ -621,7 +652,7 @@ static int jlink_init(void)
 		}
 
 		if (use_usb_address) {
-			ret = jaylink_device_get_usb_address(devs[i], &address);
+			ret = jaylink_device_get_usb_address(dev, &address);
 
 			if (ret == JAYLINK_ERR_NOT_SUPPORTED) {
 				continue;
@@ -635,7 +666,10 @@ static int jlink_init(void)
 				continue;
 		}
 
-		ret = jaylink_open(devs[i], &devh);
+		if (use_usb_location && !jlink_usb_location_equal(dev))
+			continue;
+
+		ret = jaylink_open(dev, &devh);
 
 		if (ret == JAYLINK_OK) {
 			found_device = true;
@@ -1895,14 +1929,6 @@ static void jlink_swd_read_reg(uint8_t cmd, uint32_t *value, uint32_t ap_delay_c
 	jlink_swd_queue_cmd(cmd, value, 0, ap_delay_clk);
 }
 
-static int_least32_t jlink_swd_frequency(int_least32_t hz)
-{
-	if (hz > 0)
-		jlink_speed(hz / 1000);
-
-	return hz;
-}
-
 /***************************************************************************/
 /* J-Link tap functions */
 
@@ -2004,7 +2030,7 @@ static int jlink_flush(void)
 		buf_set_buf(tdo_buffer, p->first, p->buffer,
 			    p->buffer_offset, p->length);
 
-		DEBUG_JTAG_IO("Pending scan result, length = %d.", p->length);
+		LOG_DEBUG_IO("Pending scan result, length = %d.", p->length);
 	}
 
 	jlink_tap_init();
@@ -2178,7 +2204,6 @@ static void jlink_swd_queue_cmd(uint8_t cmd, uint32_t *dst, uint32_t data, uint3
 
 static const struct swd_driver jlink_swd = {
 	.init = &jlink_swd_init,
-	.frequency = &jlink_swd_frequency,
 	.switch_seq = &jlink_swd_switch_seq,
 	.read_reg = &jlink_swd_read_reg,
 	.write_reg = &jlink_swd_write_reg,
