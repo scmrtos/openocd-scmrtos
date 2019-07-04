@@ -482,10 +482,14 @@ int get_kernel_data(struct rtos *rtos,
     
     const unsigned PROCESS_COUNT = os_info->DebugInfo.PROCESS_COUNT;
     LOG_DBG("scmRTOS> I: PROCESS_COUNT at 0x%x = %d\r\n", addr, PROCESS_COUNT);
+    LOG_DBG("scmRTOS> I: TIMEOUT_SIZE = %d\r\n", os_info->DebugInfo.TIMEOUT_SIZE);
+    LOG_DBG("scmRTOS> I: NAME_OFFSET = %d\r\n", os_info->DebugInfo.NAME_OFFSET);
     
     if(PROCESS_COUNT > MAX_PROCESS_COUNT           || 
        os_kernel->CurProcPriority > PROCESS_COUNT  ||
-       os_kernel->CurProcPriority == MAX_PROCESS_COUNT+1)   // os not run yet
+       os_kernel->ReadyProcessMap == 0             ||
+       os_info->DebugInfo.TIMEOUT_SIZE > 8          // othervise data corruption and segmentation fault can happen
+       )   // os not run yet
     {
         LOG_DBG("scmRTOS> I: RTOS does not run yet\r\n");
         return ERROR_WAIT;
@@ -501,7 +505,7 @@ int get_kernel_data(struct rtos *rtos,
 
     for(unsigned i = 0; i < PROCESS_COUNT; ++i)
     {
-        LOG_DEBUG("scmRTOS> I: ProcessTable[%d]: 0x%x\r\n", i, params->ProcessTable[i]);
+        LOG_DBG("scmRTOS> I: ProcessTable[%d]: 0x%x\r\n", i, params->ProcessTable[i]);
     }
     
     //  Check Reverse Priority Order
@@ -600,7 +604,7 @@ int get_processes_data(struct rtos  *rtos,
             os_info->MaxProcNameLen = len;
         }
 
-        if(os_processes[i].Priority > MAX_PROCESS_COUNT)
+        if(os_processes[i].Priority > os_info->DebugInfo.PROCESS_COUNT)
         {
             LOG_ERROR("scmRTOS> E: invalid process priority value: %d", os_processes[i].Priority);
             return ERROR_WAIT;
