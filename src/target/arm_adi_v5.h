@@ -234,6 +234,12 @@ struct adiv5_dap {
 	/* dap transaction list for WAIT support */
 	struct list_head cmd_journal;
 
+	/* pool for dap_cmd objects */
+	struct list_head cmd_pool;
+
+	/* number of dap_cmd objects in the pool */
+	size_t cmd_pool_size;
+
 	struct jtag_tap *tap;
 	/* Control config */
 	uint32_t dp_ctrl_stat;
@@ -326,9 +332,10 @@ enum ap_class {
  */
 enum ap_type {
 	AP_TYPE_JTAG_AP = 0x0,  /* JTAG-AP - JTAG master for controlling other JTAG devices */
-	AP_TYPE_AHB_AP  = 0x1,  /* AHB Memory-AP */
+	AP_TYPE_AHB3_AP = 0x1,  /* AHB3 Memory-AP */
 	AP_TYPE_APB_AP  = 0x2,  /* APB Memory-AP */
 	AP_TYPE_AXI_AP  = 0x4,  /* AXI Memory-AP */
+	AP_TYPE_AHB5_AP = 0x5,  /* AHB5 Memory-AP. */
 };
 
 /**
