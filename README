@@ -216,7 +216,7 @@ Additionally, for building from git:
 
 - autoconf >= 2.64
 - automake >= 1.14
-- texinfo
+- texinfo >= 5.0
 
 USB-based adapters depend on libusb-1.0 and some older drivers require
 libusb-0.1 or libusb-compat-0.1. A compatible implementation, such as
@@ -277,18 +277,22 @@ e.g. for cross-building for Windows 32-bit with MinGW on Debian:
 To make pkg-config work nicely for cross-compiling, you might need an
 additional wrapper script as described at
 
-  http://www.flameeyes.eu/autotools-mythbuster/pkgconfig/cross-compiling.html
+  https://autotools.io/pkgconfig/cross-compiling.html
 
 This is needed to tell pkg-config where to look for the target
 libraries that OpenOCD depends on. Alternatively, you can specify
 *_CFLAGS and *_LIBS environment variables directly, see "./configure
 --help" for the details.
 
+For a more or less complete script that does all this for you, see
+
+  contrib/cross-build.sh
+
 Parallel Port Dongles
 ---------------------
 
 If you want to access the parallel port using the PPDEV interface you
-have to specify both --enable-parport AND --enable-parport-ppdev, since the
+have to specify both --enable-parport AND --enable-parport-ppdev, since
 the later option is an option to the parport driver.
 
 The same is true for the --enable-parport-giveio option, you have to

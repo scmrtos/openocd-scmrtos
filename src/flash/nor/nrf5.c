@@ -28,6 +28,10 @@
 #include <helper/types.h>
 #include <helper/time_support.h>
 
+/* Both those values are constant across the current spectrum ofr nRF5 devices */
+#define WATCHDOG_REFRESH_REGISTER       0x40010600
+#define WATCHDOG_REFRESH_VALUE          0x6e524635
+
 enum {
 	NRF5_FLASH_BASE = 0x00000000,
 };
@@ -85,7 +89,7 @@ enum nrf5_ficr_registers {
 
 enum nrf5_uicr_registers {
 	NRF5_UICR_BASE = 0x10001000, /* User Information
-				       * Configuration Regsters */
+				       * Configuration Registers */
 
 #define NRF5_UICR_REG(offset) (NRF5_UICR_BASE + offset)
 
@@ -154,7 +158,7 @@ struct nrf5_info {
 	bool ficr_info_valid;
 	struct nrf52_ficr_info ficr_info;
 	const struct nrf5_device_spec *spec;
-	uint32_t hwid;
+	uint16_t hwid;
 	enum nrf5_features features;
 	unsigned int flash_size_kb;
 	unsigned int ram_size_kb;
@@ -252,7 +256,7 @@ static const struct nrf5_device_spec nrf5_known_devices_table[] = {
 	NRF51_DEVICE_DEF(0x007A, "51422", "CEAA", "C0",    256),
 	NRF51_DEVICE_DEF(0x0088, "51422", "CFAC", "A0",    256),
 
-	/* The driver fully autodects nRF52 series devices by FICR INFO,
+	/* The driver fully autodetects nRF52 series devices by FICR INFO,
 	 * no need for nRF52xxx HWIDs in this table */
 #if 0
 	/* nRF52810 Devices */
@@ -324,7 +328,7 @@ static int nrf5_wait_for_nvmc(struct nrf5_info *chip)
 	do {
 		res = target_read_u32(chip->target, NRF5_NVMC_READY, &ready);
 		if (res != ERROR_OK) {
-			LOG_ERROR("Couldn't read NVMC_READY register");
+			LOG_ERROR("Error waiting NVMC_READY: generic flash write/erase error (check protection etc...)");
 			return res;
 		}
 
@@ -436,54 +440,14 @@ error:
 	return ERROR_FAIL;
 }
 
-static int nrf5_protect_check_bprot(struct flash_bank *bank)
-{
-	struct nrf5_bank *nbank = bank->driver_priv;
-	struct nrf5_info *chip = nbank->chip;
-
-	assert(chip != NULL);
-
-	static uint32_t nrf5_bprot_offsets[4] = { 0x600, 0x604, 0x610, 0x614 };
-	uint32_t bprot_reg = 0;
-	int res;
-
-	for (int i = 0; i < bank->num_sectors; i++) {
-		unsigned int bit = i % 32;
-		if (bit == 0) {
-			unsigned int n_reg = i / 32;
-			if (n_reg >= ARRAY_SIZE(nrf5_bprot_offsets))
-				break;
-
-			res = target_read_u32(chip->target, NRF5_BPROT_BASE + nrf5_bprot_offsets[n_reg], &bprot_reg);
-			if (res != ERROR_OK)
-				return res;
-		}
-		bank->sectors[i].is_protected = (bprot_reg & (1 << bit)) ? 1 : 0;
-	}
-	return ERROR_OK;
-}
-
-static int nrf5_protect_check(struct flash_bank *bank)
+static int nrf5_protect_check_clenr0(struct flash_bank *bank)
 {
 	int res;
 	uint32_t clenr0;
-
-	/* UICR cannot be write protected so just return early */
-	if (bank->base == NRF5_UICR_BASE)
-		return ERROR_OK;
-
 	struct nrf5_bank *nbank = bank->driver_priv;
 	struct nrf5_info *chip = nbank->chip;
 
 	assert(chip != NULL);
-
-	if (chip->features & NRF5_FEATURE_BPROT)
-		return nrf5_protect_check_bprot(bank);
-
-	if (!(chip->features & NRF5_FEATURE_SERIES_51)) {
-		LOG_WARNING("Flash protection of this nRF device is not supported");
-		return ERROR_FLASH_OPER_UNSUPPORTED;
-	}
 
 	res = target_read_u32(chip->target, NRF51_FICR_CLENR0,
 			      &clenr0);
@@ -501,34 +465,71 @@ static int nrf5_protect_check(struct flash_bank *bank)
 		}
 	}
 
-	for (int i = 0; i < bank->num_sectors; i++)
+	for (unsigned int i = 0; i < bank->num_sectors; i++)
 		bank->sectors[i].is_protected =
 			clenr0 != 0xFFFFFFFF && bank->sectors[i].offset < clenr0;
 
 	return ERROR_OK;
 }
 
-static int nrf5_protect(struct flash_bank *bank, int set, int first, int last)
+static int nrf5_protect_check_bprot(struct flash_bank *bank)
+{
+	struct nrf5_bank *nbank = bank->driver_priv;
+	struct nrf5_info *chip = nbank->chip;
+
+	assert(chip != NULL);
+
+	static uint32_t nrf5_bprot_offsets[4] = { 0x600, 0x604, 0x610, 0x614 };
+	uint32_t bprot_reg = 0;
+	int res;
+
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
+		unsigned int bit = i % 32;
+		if (bit == 0) {
+			unsigned int n_reg = i / 32;
+			if (n_reg >= ARRAY_SIZE(nrf5_bprot_offsets))
+				break;
+
+			res = target_read_u32(chip->target, NRF5_BPROT_BASE + nrf5_bprot_offsets[n_reg], &bprot_reg);
+			if (res != ERROR_OK)
+				return res;
+		}
+		bank->sectors[i].is_protected = (bprot_reg & (1 << bit)) ? 1 : 0;
+	}
+	return ERROR_OK;
+}
+
+static int nrf5_protect_check(struct flash_bank *bank)
+{
+	/* UICR cannot be write protected so just return early */
+	if (bank->base == NRF5_UICR_BASE)
+		return ERROR_OK;
+
+	struct nrf5_bank *nbank = bank->driver_priv;
+	struct nrf5_info *chip = nbank->chip;
+
+	assert(chip != NULL);
+
+	if (chip->features & NRF5_FEATURE_BPROT)
+		return nrf5_protect_check_bprot(bank);
+
+	if (chip->features & NRF5_FEATURE_SERIES_51)
+		return nrf5_protect_check_clenr0(bank);
+
+	LOG_WARNING("Flash protection of this nRF device is not supported");
+	return ERROR_FLASH_OPER_UNSUPPORTED;
+}
+
+static int nrf5_protect_clenr0(struct flash_bank *bank, int set, unsigned int first,
+		unsigned int last)
 {
 	int res;
 	uint32_t clenr0, ppfc;
-	struct nrf5_info *chip;
-
-	/* UICR cannot be write protected so just bail out early */
-	if (bank->base == NRF5_UICR_BASE)
-		return ERROR_FAIL;
-
-	res = nrf5_get_probed_chip_if_halted(bank, &chip);
-	if (res != ERROR_OK)
-		return res;
-
-	if (!(chip->features & NRF5_FEATURE_SERIES_51)) {
-		LOG_ERROR("Flash protection setting of this nRF device is not supported");
-		return ERROR_FLASH_OPER_UNSUPPORTED;
-	}
+	struct nrf5_bank *nbank = bank->driver_priv;
+	struct nrf5_info *chip = nbank->chip;
 
 	if (first != 0) {
-		LOG_ERROR("Code region 0 must start at the begining of the bank");
+		LOG_ERROR("Code region 0 must start at the beginning of the bank");
 		return ERROR_FAIL;
 	}
 
@@ -547,33 +548,71 @@ static int nrf5_protect(struct flash_bank *bank, int set, int first, int last)
 	res = target_read_u32(chip->target, NRF51_UICR_CLENR0,
 			      &clenr0);
 	if (res != ERROR_OK) {
-		LOG_ERROR("Couldn't read code region 0 size[UICR]");
+		LOG_ERROR("Couldn't read code region 0 size from UICR");
 		return res;
 	}
 
-	if (clenr0 == 0xFFFFFFFF) {
-		res = target_write_u32(chip->target, NRF51_UICR_CLENR0,
-				       clenr0);
-		if (res != ERROR_OK) {
-			LOG_ERROR("Couldn't write code region 0 size[UICR]");
-			return res;
-		}
-
-	} else {
+	if (!set || clenr0 != 0xFFFFFFFF) {
 		LOG_ERROR("You need to perform chip erase before changing the protection settings");
+		return ERROR_FAIL;
 	}
 
-	nrf5_protect_check(bank);
+	res = nrf5_nvmc_write_enable(chip);
+	if (res != ERROR_OK)
+		goto error;
 
-	return ERROR_OK;
+	clenr0 = bank->sectors[last].offset + bank->sectors[last].size;
+	res = target_write_u32(chip->target, NRF51_UICR_CLENR0, clenr0);
+
+	int res2 = nrf5_wait_for_nvmc(chip);
+
+	if (res == ERROR_OK)
+		res = res2;
+
+	if (res == ERROR_OK)
+		LOG_INFO("A reset or power cycle is required for the new protection settings to take effect.");
+	else
+		LOG_ERROR("Couldn't write code region 0 size to UICR");
+
+error:
+	nrf5_nvmc_read_only(chip);
+
+	return res;
+}
+
+static int nrf5_protect(struct flash_bank *bank, int set, unsigned int first,
+		unsigned int last)
+{
+	int res;
+	struct nrf5_info *chip;
+
+	/* UICR cannot be write protected so just bail out early */
+	if (bank->base == NRF5_UICR_BASE) {
+		LOG_ERROR("UICR page does not support protection");
+		return ERROR_FLASH_OPER_UNSUPPORTED;
+	}
+
+	res = nrf5_get_probed_chip_if_halted(bank, &chip);
+	if (res != ERROR_OK)
+		return res;
+
+	if (chip->features & NRF5_FEATURE_SERIES_51)
+		return nrf5_protect_clenr0(bank, set, first, last);
+
+	LOG_ERROR("Flash protection setting is not supported on this nRF5 device");
+	return ERROR_FLASH_OPER_UNSUPPORTED;
 }
 
 static bool nrf5_info_variant_to_str(uint32_t variant, char *bf)
 {
-	h_u32_to_be((uint8_t *)bf, variant);
-	bf[4] = '\0';
-	if (isalnum(bf[0]) && isalnum(bf[1]) && isalnum(bf[2]) && isalnum(bf[3]))
+	uint8_t b[4];
+
+	h_u32_to_be(b, variant);
+	if (isalnum(b[0]) && isalnum(b[1]) && isalnum(b[2]) && isalnum(b[3])) {
+		memcpy(bf, b, 4);
+		bf[4] = 0;
 		return true;
+	}
 
 	strcpy(bf, "xxxx");
 	return false;
@@ -726,14 +765,15 @@ static int nrf5_probe(struct flash_bank *bank)
 	struct nrf5_info *chip = nbank->chip;
 	struct target *target = chip->target;
 
-	res = target_read_u32(target, NRF5_FICR_CONFIGID, &chip->hwid);
+	uint32_t configid;
+	res = target_read_u32(target, NRF5_FICR_CONFIGID, &configid);
 	if (res != ERROR_OK) {
 		LOG_ERROR("Couldn't read CONFIGID register");
 		return res;
 	}
 
-	chip->hwid &= 0xFFFF;	/* HWID is stored in the lower two
-			 * bytes of the CONFIGID register */
+	/* HWID is stored in the lower two bytes of the CONFIGID register */
+	chip->hwid = configid & 0xFFFF;
 
 	/* guess a nRF51 series if the device has no FICR INFO and we don't know HWID */
 	chip->features = NRF5_FEATURE_SERIES_51;
@@ -811,8 +851,6 @@ static int nrf5_probe(struct flash_bank *bank)
 		bank->sectors = alloc_block_array(0, flash_page_size, num_sectors);
 		if (!bank->sectors)
 			return ERROR_FAIL;
-
-		nrf5_protect_check(bank);
 
 		chip->bank[0].probed = true;
 
@@ -896,30 +934,6 @@ static int nrf5_erase_page(struct flash_bank *bank,
 	return res;
 }
 
-static const uint8_t nrf5_flash_write_code[] = {
-	/* See contrib/loaders/flash/cortex-m0.S */
-/* <wait_fifo>: */
-	0x0d, 0x68,		/* ldr	r5,	[r1,	#0] */
-	0x00, 0x2d,		/* cmp	r5,	#0 */
-	0x0b, 0xd0,		/* beq.n	1e <exit> */
-	0x4c, 0x68,		/* ldr	r4,	[r1,	#4] */
-	0xac, 0x42,		/* cmp	r4,	r5 */
-	0xf9, 0xd0,		/* beq.n	0 <wait_fifo> */
-	0x20, 0xcc,		/* ldmia	r4!,	{r5} */
-	0x20, 0xc3,		/* stmia	r3!,	{r5} */
-	0x94, 0x42,		/* cmp	r4,	r2 */
-	0x01, 0xd3,		/* bcc.n	18 <no_wrap> */
-	0x0c, 0x46,		/* mov	r4,	r1 */
-	0x08, 0x34,		/* adds	r4,	#8 */
-/* <no_wrap>: */
-	0x4c, 0x60,		/* str	r4, [r1,	#4] */
-	0x04, 0x38,		/* subs	r0, #4 */
-	0xf0, 0xd1,		/* bne.n	0 <wait_fifo> */
-/* <exit>: */
-	0x00, 0xbe		/* bkpt	0x0000 */
-};
-
-
 /* Start a low level flash write for the specified region */
 static int nrf5_ll_flash_write(struct nrf5_info *chip, uint32_t address, const uint8_t *buffer, uint32_t bytes)
 {
@@ -927,9 +941,13 @@ static int nrf5_ll_flash_write(struct nrf5_info *chip, uint32_t address, const u
 	uint32_t buffer_size = 8192;
 	struct working_area *write_algorithm;
 	struct working_area *source;
-	struct reg_param reg_params[4];
+	struct reg_param reg_params[6];
 	struct armv7m_algorithm armv7m_info;
 	int retval = ERROR_OK;
+
+	static const uint8_t nrf5_flash_write_code[] = {
+#include "../../../contrib/loaders/flash/nrf5/nrf5.inc"
+	};
 
 	LOG_DEBUG("Writing buffer to flash address=0x%"PRIx32" bytes=0x%"PRIx32, address, bytes);
 	assert(bytes % 4 == 0);
@@ -981,17 +999,21 @@ static int nrf5_ll_flash_write(struct nrf5_info *chip, uint32_t address, const u
 	init_reg_param(&reg_params[1], "r1", 32, PARAM_OUT);	/* buffer start */
 	init_reg_param(&reg_params[2], "r2", 32, PARAM_OUT);	/* buffer end */
 	init_reg_param(&reg_params[3], "r3", 32, PARAM_IN_OUT);	/* target address */
+	init_reg_param(&reg_params[4], "r6", 32, PARAM_OUT);	/* watchdog refresh value */
+	init_reg_param(&reg_params[5], "r7", 32, PARAM_OUT);	/* watchdog refresh register address */
 
 	buf_set_u32(reg_params[0].value, 0, 32, bytes);
 	buf_set_u32(reg_params[1].value, 0, 32, source->address);
 	buf_set_u32(reg_params[2].value, 0, 32, source->address + source->size);
 	buf_set_u32(reg_params[3].value, 0, 32, address);
+	buf_set_u32(reg_params[4].value, 0, 32, WATCHDOG_REFRESH_VALUE);
+	buf_set_u32(reg_params[5].value, 0, 32, WATCHDOG_REFRESH_REGISTER);
 
 	retval = target_run_flash_async_algorithm(target, buffer, bytes/4, 4,
 			0, NULL,
-			4, reg_params,
+			ARRAY_SIZE(reg_params), reg_params,
 			source->address, source->size,
-			write_algorithm->address, 0,
+			write_algorithm->address, write_algorithm->address + sizeof(nrf5_flash_write_code) - 2,
 			&armv7m_info);
 
 	target_free_working_area(target, source);
@@ -1001,6 +1023,8 @@ static int nrf5_ll_flash_write(struct nrf5_info *chip, uint32_t address, const u
 	destroy_reg_param(&reg_params[1]);
 	destroy_reg_param(&reg_params[2]);
 	destroy_reg_param(&reg_params[3]);
+	destroy_reg_param(&reg_params[4]);
+	destroy_reg_param(&reg_params[5]);
 
 	return retval;
 }
@@ -1016,6 +1040,34 @@ static int nrf5_write(struct flash_bank *bank, const uint8_t *buffer,
 
 	assert(offset % 4 == 0);
 	assert(count % 4 == 0);
+
+	/* UICR CLENR0 based protection used on nRF51 is somewhat clumsy:
+	 * RM reads: Code running from code region 1 will not be able to write
+	 * to code region 0.
+	 * Unfortunately the flash loader running from RAM can write to both
+	 * code regions whithout any hint the protection is violated.
+	 *
+	 * Update protection state and check if any flash sector to be written
+	 * is protected. */
+	if (chip->features & NRF5_FEATURE_SERIES_51) {
+
+		res = nrf5_protect_check_clenr0(bank);
+		if (res != ERROR_OK)
+			return res;
+
+		for (unsigned int sector = 0; sector < bank->num_sectors; sector++) {
+			struct flash_sector *bs = &bank->sectors[sector];
+
+			/* Start offset in or before this sector? */
+			/* End offset in or behind this sector? */
+			if ((offset < (bs->offset + bs->size))
+					&& ((offset + count - 1) >= bs->offset)
+					&& bs->is_protected == 1) {
+				LOG_ERROR("Write refused, sector %d is protected", sector);
+				return ERROR_FLASH_PROTECTED;
+			}
+		}
+	}
 
 	res = nrf5_nvmc_write_enable(chip);
 	if (res != ERROR_OK)
@@ -1033,7 +1085,8 @@ error:
 	return res;
 }
 
-static int nrf5_erase(struct flash_bank *bank, int first, int last)
+static int nrf5_erase(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
 {
 	int res;
 	struct nrf5_info *chip;
@@ -1042,11 +1095,36 @@ static int nrf5_erase(struct flash_bank *bank, int first, int last)
 	if (res != ERROR_OK)
 		return res;
 
-	/* For each sector to be erased */
-	for (int s = first; s <= last && res == ERROR_OK; s++)
-		res = nrf5_erase_page(bank, chip, &bank->sectors[s]);
+	/* UICR CLENR0 based protection used on nRF51 prevents erase
+	 * absolutely silently. NVMC has no flag to indicate the protection
+	 * was violated.
+	 *
+	 * Update protection state and check if any flash sector to be erased
+	 * is protected. */
+	if (chip->features & NRF5_FEATURE_SERIES_51) {
 
-	return res;
+		res = nrf5_protect_check_clenr0(bank);
+		if (res != ERROR_OK)
+			return res;
+	}
+
+	/* For each sector to be erased */
+	for (unsigned int s = first; s <= last && res == ERROR_OK; s++) {
+
+		if (chip->features & NRF5_FEATURE_SERIES_51
+				&& bank->sectors[s].is_protected == 1) {
+			LOG_ERROR("Flash sector %d is protected", s);
+			return ERROR_FLASH_PROTECTED;
+		}
+
+		res = nrf5_erase_page(bank, chip, &bank->sectors[s]);
+		if (res != ERROR_OK) {
+			LOG_ERROR("Error erasing sector %d", s);
+			return res;
+		}
+	}
+
+	return ERROR_OK;
 }
 
 static void nrf5_free_driver_priv(struct flash_bank *bank)
@@ -1163,23 +1241,16 @@ COMMAND_HANDLER(nrf5_handle_mass_erase_command)
 	}
 
 	res = nrf5_erase_all(chip);
-	if (res != ERROR_OK) {
+	if (res == ERROR_OK) {
+		LOG_INFO("Mass erase completed.");
+		if (chip->features & NRF5_FEATURE_SERIES_51)
+			LOG_INFO("A reset or power cycle is required if the flash was protected before.");
+
+	} else {
 		LOG_ERROR("Failed to erase the chip");
-		nrf5_protect_check(bank);
-		return res;
 	}
 
-	res = nrf5_protect_check(bank);
-	if (res != ERROR_OK) {
-		LOG_ERROR("Failed to check chip's write protection");
-		return res;
-	}
-
-	res = get_flash_bank_by_addr(target, NRF5_UICR_BASE, true, &bank);
-	if (res != ERROR_OK)
-		return res;
-
-	return ERROR_OK;
+	return res;
 }
 
 COMMAND_HANDLER(nrf5_handle_info_command)
@@ -1367,7 +1438,7 @@ const struct flash_driver nrf5_flash = {
 };
 
 /* We need to retain the flash-driver name as well as the commands
- * for backwards compatability */
+ * for backwards compatibility */
 const struct flash_driver nrf51_flash = {
 	.name			= "nrf51",
 	.commands		= nrf5_command_handlers,

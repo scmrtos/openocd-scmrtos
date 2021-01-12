@@ -7,6 +7,7 @@ endif
 %C%_libtarget_la_LIBADD = %D%/openrisc/libopenrisc.la \
 	%D%/riscv/libriscv.la
 
+%C%_libtarget_la_CPPFLAGS = $(AM_CPPFLAGS)
 
 STARTUP_TCL_SRCS += %D%/startup.tcl
 
@@ -24,15 +25,18 @@ noinst_LTLIBRARIES += %D%/libtarget.la
 	$(STM8_SRC) \
 	$(INTEL_IA32_SRC) \
 	$(ESIRISC_SRC) \
+        $(ARC_SRC) \
 	%D%/avrt.c \
 	%D%/dsp563xx.c \
 	%D%/dsp563xx_once.c \
 	%D%/dsp5680xx.c \
-	%D%/hla_target.c
+	%D%/hla_target.c \
+	$(ARMV8_SRC) \
+	$(MIPS64_SRC)
 
-if TARGET64
-%C%_libtarget_la_SOURCES +=$(ARMV8_SRC)
-%C%_libtarget_la_SOURCES +=$(MIPS64_SRC)
+if HAVE_CAPSTONE
+%C%_libtarget_la_CPPFLAGS += $(CAPSTONE_CFLAGS)
+%C%_libtarget_la_LIBADD += $(CAPSTONE_LIBS)
 endif
 
 TARGET_CORE_SRC = \
@@ -44,7 +48,8 @@ TARGET_CORE_SRC = \
 	%D%/target_request.c \
 	%D%/testee.c \
 	%D%/semihosting_common.c \
-	%D%/smp.c
+	%D%/smp.c \
+	%D%/rtt.c
 
 ARMV4_5_SRC = \
 	%D%/armv4_5.c \
@@ -85,6 +90,7 @@ ARMV8_SRC = \
 	%D%/armv8_dpm.c \
 	%D%/armv8_opcodes.c \
 	%D%/aarch64.c \
+	%D%/a64_disassembler.c \
 	%D%/armv8.c \
 	%D%/armv8_cache.c
 
@@ -98,6 +104,7 @@ ARM_DEBUG_SRC = \
 	%D%/arm_dap.c \
 	%D%/armv7a_cache.c \
 	%D%/armv7a_cache_l2x.c \
+	%D%/adi_v5_dapdirect.c \
 	%D%/adi_v5_jtag.c \
 	%D%/adi_v5_swd.c \
 	%D%/embeddedice.c \
@@ -155,6 +162,12 @@ ESIRISC_SRC = \
 	%D%/esirisc_jtag.c \
 	%D%/esirisc_trace.c
 
+ARC_SRC = \
+        %D%/arc.c \
+        %D%/arc_cmd.c \
+        %D%/arc_jtag.c \
+        %D%/arc_mem.c
+
 %C%_libtarget_la_SOURCES += \
 	%D%/algorithm.h \
 	%D%/arm.h \
@@ -165,6 +178,7 @@ ESIRISC_SRC = \
 	%D%/armv7a_cache_l2x.h \
 	%D%/armv7a_mmu.h \
 	%D%/arm_disassembler.h \
+	%D%/a64_disassembler.h \
 	%D%/arm_opcodes.h \
 	%D%/arm_simulator.h \
 	%D%/arm_semihosting.h \
@@ -242,7 +256,12 @@ ESIRISC_SRC = \
 	%D%/esirisc.h \
 	%D%/esirisc_jtag.h \
 	%D%/esirisc_regs.h \
-	%D%/esirisc_trace.h
+	%D%/esirisc_trace.h \
+	%D%/arc.h \
+	%D%/arc_cmd.h \
+	%D%/arc_jtag.h \
+	%D%/arc_mem.h \
+	%D%/rtt.h
 
 include %D%/openrisc/Makefile.am
 include %D%/riscv/Makefile.am

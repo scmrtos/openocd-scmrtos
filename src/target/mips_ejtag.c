@@ -27,11 +27,8 @@
 #include "mips32.h"
 #include "mips_ejtag.h"
 #include "mips32_dmaacc.h"
-
-#if BUILD_TARGET64 == 1
 #include "mips64.h"
 #include "mips64_pracc.h"
-#endif
 
 void mips_ejtag_set_instr(struct mips_ejtag *ejtag_info, uint32_t new_instr)
 {
@@ -43,7 +40,7 @@ void mips_ejtag_set_instr(struct mips_ejtag *ejtag_info, uint32_t new_instr)
 		struct scan_field field;
 		field.num_bits = tap->ir_length;
 
-		uint8_t t[4];
+		uint8_t t[4] = { 0 };
 		field.out_value = t;
 		buf_set_u32(t, 0, field.num_bits, new_instr);
 
@@ -61,7 +58,7 @@ int mips_ejtag_get_idcode(struct mips_ejtag *ejtag_info)
 	return mips_ejtag_drscan_32(ejtag_info, &ejtag_info->idcode);
 }
 
-int mips_ejtag_get_impcode(struct mips_ejtag *ejtag_info)
+static int mips_ejtag_get_impcode(struct mips_ejtag *ejtag_info)
 {
 	mips_ejtag_set_instr(ejtag_info, EJTAG_INST_IMPCODE);
 
@@ -100,7 +97,7 @@ int mips_ejtag_drscan_64(struct mips_ejtag *ejtag_info, uint64_t *data)
 	if (tap == NULL)
 		return ERROR_FAIL;
 	struct scan_field field;
-	uint8_t t[8], r[8];
+	uint8_t t[8] = { 0 }, r[8];
 	int retval;
 
 	field.num_bits = 64;
@@ -122,7 +119,8 @@ int mips_ejtag_drscan_64(struct mips_ejtag *ejtag_info, uint64_t *data)
 	return ERROR_OK;
 }
 
-void mips_ejtag_drscan_32_queued(struct mips_ejtag *ejtag_info, uint32_t data_out, uint8_t *data_in)
+static void mips_ejtag_drscan_32_queued(struct mips_ejtag *ejtag_info,
+		uint32_t data_out, uint8_t *data_in)
 {
 	assert(ejtag_info->tap != NULL);
 	struct jtag_tap *tap = ejtag_info->tap;
@@ -130,7 +128,7 @@ void mips_ejtag_drscan_32_queued(struct mips_ejtag *ejtag_info, uint32_t data_ou
 	struct scan_field field;
 	field.num_bits = 32;
 
-	uint8_t scan_out[4];
+	uint8_t scan_out[4] = { 0 };
 	field.out_value = scan_out;
 	buf_set_u32(scan_out, 0, field.num_bits, data_out);
 
@@ -281,7 +279,7 @@ int mips_ejtag_exit_debug(struct mips_ejtag *ejtag_info)
 	return ctx.retval;
 }
 
-/* mips_ejtag_init_mmr - asign Memory-Mapped Registers depending
+/* mips_ejtag_init_mmr - assign Memory-Mapped Registers depending
  *			on EJTAG version.
  */
 static void mips_ejtag_init_mmr(struct mips_ejtag *ejtag_info)
@@ -349,7 +347,7 @@ static void ejtag_main_print_imp(struct mips_ejtag *ejtag_info)
 		EJTAG_IMP_HAS(EJTAG_IMP_ASID6) ? " ASID_6" : "",
 		EJTAG_IMP_HAS(EJTAG_IMP_MIPS16) ? " MIPS16" : "",
 		EJTAG_IMP_HAS(EJTAG_IMP_NODMA) ? " noDMA" : " DMA",
-		EJTAG_IMP_HAS(EJTAG_DCR_MIPS64) ? " MIPS64" : " MIPS32");
+		EJTAG_IMP_HAS(EJTAG_IMP_MIPS64) ? " MIPS64" : " MIPS32");
 
 	switch (ejtag_info->ejtag_version) {
 		case EJTAG_VERSION_20:
@@ -458,8 +456,6 @@ int mips_ejtag_fastdata_scan(struct mips_ejtag *ejtag_info, int write_t, uint32_
 	return ERROR_OK;
 }
 
-#if BUILD_TARGET64 == 1
-
 int mips64_ejtag_config_step(struct mips_ejtag *ejtag_info, bool enable_step)
 {
 	const uint32_t code_enable[] = {
@@ -564,5 +560,3 @@ int mips64_ejtag_fastdata_scan(struct mips_ejtag *ejtag_info, bool write_t, uint
 
 	return ERROR_OK;
 }
-
-#endif /* BUILD_TARGET64 */

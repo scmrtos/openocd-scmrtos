@@ -285,7 +285,7 @@ int tcl_init(void)
 
 	return add_service("tcl", tcl_port, CONNECTION_LIMIT_UNLIMITED,
 		&tcl_new_connection, &tcl_input,
-		&tcl_closed, NULL);
+		&tcl_closed, NULL, NULL);
 }
 
 COMMAND_HANDLER(handle_tcl_port_command)
@@ -331,7 +331,7 @@ static const struct command_registration tcl_command_handlers[] = {
 	{
 		.name = "tcl_port",
 		.handler = handle_tcl_port_command,
-		.mode = COMMAND_ANY,
+		.mode = COMMAND_CONFIG,
 		.help = "Specify port on which to listen "
 			"for incoming Tcl syntax.  "
 			"Read help on 'gdb_port'.",
