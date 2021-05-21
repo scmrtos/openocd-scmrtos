@@ -41,7 +41,7 @@ static bool scmRTOS_detect_rtos               (struct target *target);
 static int scmRTOS_create                    (struct target *target);
 static int scmRTOS_update_proc_info          (struct rtos *rtos);
 static int scmRTOS_get_proc_reg_list         (struct rtos *rtos, int64_t thread_id, struct rtos_reg **reg_list, int *num_regs);
-static int scmRTOS_get_symbol_list_to_lookup (symbol_table_elem_t *symbol_list[]);
+static int scmRTOS_get_symbol_list_to_lookup (struct symbol_table_elem *symbol_list[]);
 static int scmRTOS_clean                     (struct target *target);
 //------------------------------------------------------------------------------
 //
@@ -404,9 +404,9 @@ int scmRTOS_get_proc_reg_list(struct rtos *rtos, int64_t thread_id, struct rtos_
     
 }
 //------------------------------------------------------------------------------
-int scmRTOS_get_symbol_list_to_lookup(symbol_table_elem_t *symbol_list[])
+int scmRTOS_get_symbol_list_to_lookup(struct symbol_table_elem *symbol_list[])
 {
-     *symbol_list = calloc( SYMBOL_COUNT, sizeof(symbol_table_elem_t) );
+     *symbol_list = calloc( SYMBOL_COUNT, sizeof(struct symbol_table_elem) );
     if(!*symbol_list)
     {
         LOG_ERROR("scmRTOS> E: could not allocate memory for symbol list");
