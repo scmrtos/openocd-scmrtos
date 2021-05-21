@@ -74,6 +74,7 @@
 #include <jtag/swd.h>
 #include <transport/transport.h>
 #include <helper/time_support.h>
+#include <helper/log.h>
 
 #if IS_CYGWIN == 1
 #include <windows.h>
@@ -482,7 +483,11 @@ static void ftdi_execute_scan(struct jtag_command *cmd)
 			uint8_t last_bit = 0;
 			if (field->out_value)
 				bit_copy(&last_bit, 0, field->out_value, field->num_bits - 1, 1);
-			uint8_t tms_bits = 0x01;
+
+			/* If endstate is TAP_IDLE, clock out 1-1-0 (->EXIT1 ->UPDATE ->IDLE)
+			 * Otherwise, clock out 1-0 (->EXIT1 ->PAUSE)
+			 */
+			uint8_t tms_bits = 0x03;
 			mpsse_clock_tms_cs(mpsse_ctx,
 					&tms_bits,
 					0,
@@ -492,13 +497,24 @@ static void ftdi_execute_scan(struct jtag_command *cmd)
 					last_bit,
 					ftdi_jtag_mode);
 			tap_set_state(tap_state_transition(tap_get_state(), 1));
-			mpsse_clock_tms_cs_out(mpsse_ctx,
-					&tms_bits,
-					1,
-					1,
-					last_bit,
-					ftdi_jtag_mode);
-			tap_set_state(tap_state_transition(tap_get_state(), 0));
+			if (tap_get_end_state() == TAP_IDLE) {
+				mpsse_clock_tms_cs_out(mpsse_ctx,
+						&tms_bits,
+						1,
+						2,
+						last_bit,
+						ftdi_jtag_mode);
+				tap_set_state(tap_state_transition(tap_get_state(), 1));
+				tap_set_state(tap_state_transition(tap_get_state(), 0));
+			} else {
+				mpsse_clock_tms_cs_out(mpsse_ctx,
+						&tms_bits,
+						2,
+						1,
+						last_bit,
+						ftdi_jtag_mode);
+				tap_set_state(tap_state_transition(tap_get_state(), 0));
+			}
 		} else
 			mpsse_clock_data(mpsse_ctx,
 				field->out_value,
@@ -524,17 +540,19 @@ static int ftdi_reset(int trst, int srst)
 
 	LOG_DEBUG_IO("reset trst: %i srst %i", trst, srst);
 
-	if (trst == 1) {
-		if (sig_ntrst)
-			ftdi_set_signal(sig_ntrst, '0');
-		else
-			LOG_ERROR("Can't assert TRST: nTRST signal is not defined");
-	} else if (sig_ntrst && jtag_get_reset_config() & RESET_HAS_TRST &&
-			trst == 0) {
-		if (jtag_get_reset_config() & RESET_TRST_OPEN_DRAIN)
-			ftdi_set_signal(sig_ntrst, 'z');
-		else
-			ftdi_set_signal(sig_ntrst, '1');
+	if (!swd_mode) {
+		if (trst == 1) {
+			if (sig_ntrst)
+				ftdi_set_signal(sig_ntrst, '0');
+			else
+				LOG_ERROR("Can't assert TRST: nTRST signal is not defined");
+		} else if (sig_ntrst && jtag_get_reset_config() & RESET_HAS_TRST &&
+				trst == 0) {
+			if (jtag_get_reset_config() & RESET_TRST_OPEN_DRAIN)
+				ftdi_set_signal(sig_ntrst, 'z');
+			else
+				ftdi_set_signal(sig_ntrst, '1');
+		}
 	}
 
 	if (srst == 1) {
@@ -1062,7 +1080,6 @@ static void ftdi_swd_swdio_en(bool enable)
 
 /**
  * Flush the MPSSE queue and process the SWD transaction queue
- * @param dap
  * @return
  */
 static int ftdi_swd_run_queue(void)

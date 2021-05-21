@@ -637,7 +637,18 @@ int target_resume(struct target *target, int current, target_addr_t address,
 	 * we poll. The CPU can even halt at the current PC as a result of
 	 * a software breakpoint being inserted by (a bug?) the application.
 	 */
+	/*
+	 * resume() triggers the event 'resumed'. The execution of TCL commands
+	 * in the event handler causes the polling of targets. If the target has
+	 * already halted for a breakpoint, polling will run the 'halted' event
+	 * handler before the pending 'resumed' handler.
+	 * Disable polling during resume() to guarantee the execution of handlers
+	 * in the correct order.
+	 */
+	bool save_poll = jtag_poll_get_enabled();
+	jtag_poll_set_enabled(false);
 	retval = target->type->resume(target, current, address, handle_breakpoints, debug_execution);
+	jtag_poll_set_enabled(save_poll);
 	if (retval != ERROR_OK)
 		return retval;
 
@@ -803,6 +814,13 @@ static int target_soft_reset_halt(struct target *target)
  * algorithm.
  *
  * @param target used to run the algorithm
+ * @param num_mem_params
+ * @param mem_params
+ * @param num_reg_params
+ * @param reg_param
+ * @param entry_point
+ * @param exit_point
+ * @param timeout_ms
  * @param arch_info target-specific description of the algorithm.
  */
 int target_run_algorithm(struct target *target,
@@ -838,6 +856,12 @@ done:
  * Executes a target-specific native code algorithm and leaves it running.
  *
  * @param target used to run the algorithm
+ * @param num_mem_params
+ * @param mem_params
+ * @param num_reg_params
+ * @param reg_params
+ * @param entry_point
+ * @param exit_point
  * @param arch_info target-specific description of the algorithm.
  */
 int target_start_algorithm(struct target *target,
@@ -876,6 +900,12 @@ done:
  * Waits for an algorithm started with target_start_algorithm() to complete.
  *
  * @param target used to run the algorithm
+ * @param num_mem_params
+ * @param mem_params
+ * @param num_reg_params
+ * @param reg_params
+ * @param exit_point
+ * @param timeout_ms
  * @param arch_info target-specific description of the algorithm.
  */
 int target_wait_algorithm(struct target *target,
@@ -947,6 +977,7 @@ done:
  * @param entry_point address on the target to execute to start the algorithm
  * @param exit_point address at which to set a breakpoint to catch the
  *     end of the algorithm; can be 0 if target triggers a breakpoint itself
+ * @param arch_info
  */
 
 int target_run_flash_async_algorithm(struct target *target,
@@ -4036,7 +4067,7 @@ COMMAND_HANDLER(handle_wp_command)
 	}
 
 	enum watchpoint_rw type = WPT_ACCESS;
-	uint32_t addr = 0;
+	target_addr_t addr = 0;
 	uint32_t length = 0;
 	uint32_t data_value = 0x0;
 	uint32_t data_mask = 0xffffffff;
@@ -4066,7 +4097,7 @@ COMMAND_HANDLER(handle_wp_command)
 		/* fall through */
 	case 2:
 		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[1], length);
-		COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], addr);
+		COMMAND_PARSE_ADDRESS(CMD_ARGV[0], addr);
 		break;
 
 	default:
@@ -4086,8 +4117,8 @@ COMMAND_HANDLER(handle_rwp_command)
 	if (CMD_ARGC != 1)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	uint32_t addr;
-	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[0], addr);
+	target_addr_t addr;
+	COMMAND_PARSE_ADDRESS(CMD_ARGV[0], addr);
 
 	struct target *target = get_current_target(CMD_CTX);
 	watchpoint_remove(target, addr);
@@ -4914,6 +4945,11 @@ no_params:
 				}
 
 				if (goi->isconfigure) {
+					/* START_DEPRECATED_TPIU */
+					if (n->value == TARGET_EVENT_TRACE_CONFIG)
+						LOG_INFO("DEPRECATED target event %s", n->name);
+					/* END_DEPRECATED_TPIU */
+
 					bool replace = true;
 					if (teap == NULL) {
 						/* create new */
@@ -5123,6 +5159,7 @@ no_params:
 				e = Jim_GetOpt_String(goi, &s, NULL);
 				if (e != JIM_OK)
 					return e;
+				free(target->gdb_port_override);
 				target->gdb_port_override = strdup(s);
 			} else {
 				if (goi->argc != 0)
@@ -5160,30 +5197,37 @@ no_params:
 
 static int jim_target_configure(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 {
+	struct command *c = jim_to_command(interp);
 	Jim_GetOptInfo goi;
 
 	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
-	goi.isconfigure = !strcmp(Jim_GetString(argv[0], NULL), "configure");
+	goi.isconfigure = !strcmp(c->name, "configure");
 	if (goi.argc < 1) {
 		Jim_WrongNumArgs(goi.interp, goi.argc, goi.argv,
 				 "missing: -option ...");
 		return JIM_ERR;
 	}
-	struct target *target = Jim_CmdPrivData(goi.interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	return target_configure(&goi, target);
 }
 
 static int jim_target_mem2array(Jim_Interp *interp,
 		int argc, Jim_Obj *const *argv)
 {
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	return target_mem2array(interp, target, argc - 1, argv + 1);
 }
 
 static int jim_target_array2mem(Jim_Interp *interp,
 		int argc, Jim_Obj *const *argv)
 {
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	return target_array2mem(interp, target, argc - 1, argv + 1);
 }
 
@@ -5215,7 +5259,9 @@ static int jim_target_examine(Jim_Interp *interp, int argc, Jim_Obj *const *argv
 		allow_defer = true;
 	}
 
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	if (!target->tap->enabled)
 		return jim_target_tap_disabled(interp);
 
@@ -5233,7 +5279,9 @@ static int jim_target_examine(Jim_Interp *interp, int argc, Jim_Obj *const *argv
 
 static int jim_target_was_examined(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 {
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 
 	Jim_SetResultBool(interp, target_was_examined(target));
 	return JIM_OK;
@@ -5241,7 +5289,9 @@ static int jim_target_was_examined(Jim_Interp *interp, int argc, Jim_Obj * const
 
 static int jim_target_examine_deferred(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 {
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 
 	Jim_SetResultBool(interp, target->defer_examine);
 	return JIM_OK;
@@ -5253,7 +5303,9 @@ static int jim_target_halt_gdb(Jim_Interp *interp, int argc, Jim_Obj *const *arg
 		Jim_WrongNumArgs(interp, 1, argv, "[no parameters]");
 		return JIM_ERR;
 	}
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 
 	if (target_call_event_callbacks(target, TARGET_EVENT_GDB_HALT) != ERROR_OK)
 		return JIM_ERR;
@@ -5267,7 +5319,9 @@ static int jim_target_poll(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 		Jim_WrongNumArgs(interp, 1, argv, "[no parameters]");
 		return JIM_ERR;
 	}
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	if (!target->tap->enabled)
 		return jim_target_tap_disabled(interp);
 
@@ -5304,7 +5358,9 @@ static int jim_target_reset(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 	if (e != JIM_OK)
 		return e;
 
-	struct target *target = Jim_CmdPrivData(goi.interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	if (!target->tap->enabled)
 		return jim_target_tap_disabled(interp);
 
@@ -5337,7 +5393,9 @@ static int jim_target_halt(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 		Jim_WrongNumArgs(interp, 1, argv, "[no parameters]");
 		return JIM_ERR;
 	}
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	if (!target->tap->enabled)
 		return jim_target_tap_disabled(interp);
 	int e = target->type->halt(target);
@@ -5367,7 +5425,9 @@ static int jim_target_wait_state(Jim_Interp *interp, int argc, Jim_Obj *const *a
 	e = Jim_GetOpt_Wide(&goi, &a);
 	if (e != JIM_OK)
 		return e;
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	if (!target->tap->enabled)
 		return jim_target_tap_disabled(interp);
 
@@ -5411,7 +5471,9 @@ static int jim_target_current_state(Jim_Interp *interp, int argc, Jim_Obj *const
 		Jim_WrongNumArgs(interp, 1, argv, "[no parameters]");
 		return JIM_ERR;
 	}
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	Jim_SetResultString(interp, target_state_name(target), -1);
 	return JIM_OK;
 }
@@ -5430,7 +5492,9 @@ static int jim_target_invoke_event(Jim_Interp *interp, int argc, Jim_Obj *const 
 		Jim_GetOpt_NvpUnknown(&goi, nvp_target_event, 1);
 		return e;
 	}
-	struct target *target = Jim_CmdPrivData(interp);
+	struct command_context *cmd_ctx = current_command_context(interp);
+	assert(cmd_ctx);
+	struct target *target = get_current_target(cmd_ctx);
 	target_handle_event(target, n->value);
 	return JIM_OK;
 }
@@ -5641,15 +5705,6 @@ static int target_create(Jim_GetOptInfo *goi)
 			/* found */
 			break;
 		}
-
-		/* check for deprecated name */
-		if (target_types[x]->deprecated_name) {
-			if (0 == strcmp(cp, target_types[x]->deprecated_name)) {
-				/* found */
-				LOG_WARNING("target name is deprecated use: \'%s\'", target_types[x]->name);
-				break;
-			}
-		}
 	}
 	if (target_types[x] == NULL) {
 		Jim_SetResultFormatted(goi->interp, "Unknown target type %s, try one of ", cp);
@@ -5688,9 +5743,6 @@ static int target_create(Jim_GetOptInfo *goi)
 	}
 
 	memcpy(target->type, target_types[x], sizeof(struct target_type));
-
-	/* will be set by "-endian" */
-	target->endianness = TARGET_ENDIAN_UNKNOWN;
 
 	/* default to first core, override with -coreid */
 	target->coreid = 0;
@@ -5820,7 +5872,7 @@ static int target_create(Jim_GetOptInfo *goi)
 		},
 		COMMAND_REGISTRATION_DONE
 	};
-	e = register_commands(cmd_ctx, NULL, target_commands);
+	e = register_commands_override_target(cmd_ctx, NULL, target_commands, target);
 	if (e != ERROR_OK) {
 		if (target->type->deinit_target)
 			target->type->deinit_target(target);
@@ -5832,10 +5884,6 @@ static int target_create(Jim_GetOptInfo *goi)
 		free(target);
 		return JIM_ERR;
 	}
-
-	struct command *c = command_find_in_context(cmd_ctx, cp);
-	assert(c);
-	command_set_handler_data(c, target);
 
 	/* append to end of list */
 	append_to_list_all_targets(target);

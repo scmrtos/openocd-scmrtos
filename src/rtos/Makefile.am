@@ -20,6 +20,7 @@ noinst_LTLIBRARIES += %D%/librtos.la
 	%D%/uCOS-III.c \
 	%D%/nuttx.c \
 	%D%/hwthread.c \
+	%D%/zephyr.c \
 	%D%/riot.c \
 	%D%/scmRTOS.c \
 	%D%/rtos.h \
