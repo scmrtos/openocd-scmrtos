@@ -40,6 +40,7 @@
 #endif
 
 #include "imp.h"
+#include <helper/binarybuffer.h>
 #include <helper/bits.h>
 #include <helper/time_support.h>
 #include <target/algorithm.h>
@@ -175,7 +176,7 @@ struct stmqspi_flash_bank {
 	bool octo;
 	struct flash_device dev;
 	uint32_t io_base;
-	uint32_t saved_cr;	/* in particalar FSEL, DFM bit mask in QUADSPI_CR *AND* OCTOSPI_CR */
+	uint32_t saved_cr;	/* in particular FSEL, DFM bit mask in QUADSPI_CR *AND* OCTOSPI_CR */
 	uint32_t saved_ccr; /* different meaning for QUADSPI and OCTOSPI */
 	uint32_t saved_tcr;	/* only for OCTOSPI */
 	uint32_t saved_ir;	/* only for OCTOSPI */
@@ -225,7 +226,7 @@ FLASH_BANK_COMMAND_HANDLER(stmqspi_flash_bank_command)
 	COMMAND_PARSE_NUMBER(u32, CMD_ARGV[6], io_base);
 
 	stmqspi_info = malloc(sizeof(struct stmqspi_flash_bank));
-	if (stmqspi_info == NULL) {
+	if (!stmqspi_info) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
@@ -509,7 +510,7 @@ COMMAND_HANDLER(stmqspi_handle_mass_erase_command)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	stmqspi_info = bank->driver_priv;
@@ -588,18 +589,13 @@ COMMAND_HANDLER(stmqspi_handle_mass_erase_command)
 	retval = wait_till_ready(bank, SPI_MASS_ERASE_TIMEOUT);
 
 	duration_measure(&bench);
-	if (retval == ERROR_OK) {
-		/* set all sectors as erased */
-		for (sector = 0; sector < bank->num_sectors; sector++)
-			bank->sectors[sector].is_erased = 1;
-
+	if (retval == ERROR_OK)
 		command_print(CMD, "stmqspi mass erase completed in %fs (%0.3f KiB/s)",
 			duration_elapsed(&bench),
 			duration_kbps(&bench, bank->size));
-	} else {
+	else
 		command_print(CMD, "stmqspi mass erase not completed even after %fs",
 			duration_elapsed(&bench));
-	}
 
 err:
 	/* Switch to memory mapped mode before return to prompt */
@@ -638,7 +634,7 @@ COMMAND_HANDLER(stmqspi_handle_set)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	retval = CALL_COMMAND_HANDLER(flash_command_get_bank, index++, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	target = bank->target;
@@ -754,7 +750,7 @@ COMMAND_HANDLER(stmqspi_handle_set)
 	bank->num_sectors =
 		stmqspi_info->dev.size_in_bytes / stmqspi_info->dev.sectorsize;
 	sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	if (sectors == NULL) {
+	if (!sectors) {
 		LOG_ERROR("not enough memory");
 		return ERROR_FAIL;
 	}
@@ -808,7 +804,7 @@ COMMAND_HANDLER(stmqspi_handle_cmd)
 	}
 
 	retval = CALL_COMMAND_HANDLER(flash_command_get_bank, 0, &bank);
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return retval;
 
 	target = bank->target;
@@ -2358,7 +2354,7 @@ static int stmqspi_probe(struct flash_bank *bank)
 	/* create and fill sectors array */
 	bank->num_sectors = stmqspi_info->dev.size_in_bytes / stmqspi_info->dev.sectorsize;
 	sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
-	if (sectors == NULL) {
+	if (!sectors) {
 		LOG_ERROR("not enough memory");
 		retval = ERROR_FAIL;
 		goto err;
@@ -2397,17 +2393,16 @@ static int stmqspi_protect_check(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
-static int get_stmqspi_info(struct flash_bank *bank, char *buf, int buf_size)
+static int get_stmqspi_info(struct flash_bank *bank, struct command_invocation *cmd)
 {
 	struct stmqspi_flash_bank *stmqspi_info = bank->driver_priv;
 
 	if (!(stmqspi_info->probed)) {
-		snprintf(buf, buf_size,
-			"\nQSPI flash bank not probed yet\n");
+		command_print_sameline(cmd, "\nQSPI flash bank not probed yet\n");
 		return ERROR_FLASH_BANK_NOT_PROBED;
 	}
 
-	snprintf(buf, buf_size, "flash%s%s \'%s\', device id = 0x%06" PRIx32
+	command_print_sameline(cmd, "flash%s%s \'%s\', device id = 0x%06" PRIx32
 			", flash size = %" PRIu32 "%sbytes\n(page size = %" PRIu32
 			", read = 0x%02" PRIx8 ", qread = 0x%02" PRIx8
 			", pprog = 0x%02" PRIx8 ", mass_erase = 0x%02" PRIx8

@@ -42,12 +42,33 @@
 
 #define CPUID		0xE000ED00
 
-#define ARM_CPUID_PARTNO_MASK	0xFFF0
+#define ARM_CPUID_PARTNO_POS    4
+#define ARM_CPUID_PARTNO_MASK	(0xFFF << ARM_CPUID_PARTNO_POS)
 
-#define CORTEX_M23_PARTNO	0xD200
-#define CORTEX_M33_PARTNO	0xD210
-#define CORTEX_M35P_PARTNO	0xD310
-#define CORTEX_M55_PARTNO	0xD220
+enum cortex_m_partno {
+	CORTEX_M0_PARTNO   = 0xC20,
+	CORTEX_M1_PARTNO   = 0xC21,
+	CORTEX_M3_PARTNO   = 0xC23,
+	CORTEX_M4_PARTNO   = 0xC24,
+	CORTEX_M7_PARTNO   = 0xC27,
+	CORTEX_M0P_PARTNO  = 0xC60,
+	CORTEX_M23_PARTNO  = 0xD20,
+	CORTEX_M33_PARTNO  = 0xD21,
+	CORTEX_M35P_PARTNO = 0xD31,
+	CORTEX_M55_PARTNO  = 0xD22,
+};
+
+/* Relevant Cortex-M flags, used in struct cortex_m_part_info.flags */
+#define CORTEX_M_F_HAS_FPV4               BIT(0)
+#define CORTEX_M_F_HAS_FPV5               BIT(1)
+#define CORTEX_M_F_TAR_AUTOINCR_BLOCK_4K  BIT(2)
+
+struct cortex_m_part_info {
+	enum cortex_m_partno partno;
+	const char *name;
+	enum arm_arch arch;
+	uint32_t flags;
+};
 
 /* Debug Control Block */
 #define DCB_DHCSR	0xE000EDF0
@@ -56,7 +77,7 @@
 #define DCB_DEMCR	0xE000EDFC
 #define DCB_DSCSR	0xE000EE08
 
-#define DCRSR_WnR	BIT(16)
+#define DCRSR_WNR	BIT(16)
 
 #define DWT_CTRL	0xE0001000
 #define DWT_CYCCNT	0xE0001004
@@ -129,9 +150,9 @@
 #define NVIC_AIRCR		0xE000ED0C
 #define NVIC_SHCSR		0xE000ED24
 #define NVIC_CFSR		0xE000ED28
-#define NVIC_MMFSRb		0xE000ED28
-#define NVIC_BFSRb		0xE000ED29
-#define NVIC_USFSRh		0xE000ED2A
+#define NVIC_MMFSRB		0xE000ED28
+#define NVIC_BFSRB		0xE000ED29
+#define NVIC_USFSRH		0xE000ED2A
 #define NVIC_HFSR		0xE000ED2C
 #define NVIC_DFSR		0xE000ED30
 #define NVIC_MMFAR		0xE000ED34
@@ -211,9 +232,9 @@ struct cortex_m_common {
 
 	enum cortex_m_soft_reset_config soft_reset_config;
 	bool vectreset_supported;
-
 	enum cortex_m_isrmasking_mode isrmasking_mode;
 
+	const struct cortex_m_part_info *core_info;
 	struct armv7m_common armv7m;
 
 	int apsel;

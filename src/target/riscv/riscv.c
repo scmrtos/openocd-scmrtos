@@ -8,22 +8,20 @@
 #include "config.h"
 #endif
 
+#include <helper/log.h>
+#include <helper/time_support.h>
 #include "target/target.h"
 #include "target/algorithm.h"
 #include "target/target_type.h"
-#include "log.h"
 #include "jtag/jtag.h"
 #include "target/register.h"
 #include "target/breakpoints.h"
-#include "helper/time_support.h"
 #include "riscv.h"
 #include "gdb_regs.h"
 #include "rtos/rtos.h"
 
 #define get_field(reg, mask) (((reg) & (mask)) / ((mask) & ~((mask) << 1)))
 #define set_field(reg, mask, val) (((reg) & ~(mask)) | (((val) * ((mask) & ~((mask) << 1))) & (mask)))
-
-#define DIM(x)		(sizeof(x)/sizeof(*x))
 
 /* Constants for legacy SiFive hardware breakpoints. */
 #define CSR_BPCONTROL_X			(1<<0)
@@ -184,10 +182,10 @@ struct scan_field _bscan_tunnel_nested_tap_select_dmi[] = {
 		}
 };
 struct scan_field *bscan_tunnel_nested_tap_select_dmi = _bscan_tunnel_nested_tap_select_dmi;
-uint32_t bscan_tunnel_nested_tap_select_dmi_num_fields = DIM(_bscan_tunnel_nested_tap_select_dmi);
+uint32_t bscan_tunnel_nested_tap_select_dmi_num_fields = ARRAY_SIZE(_bscan_tunnel_nested_tap_select_dmi);
 
 struct scan_field *bscan_tunnel_data_register_select_dmi = _bscan_tunnel_data_register_select_dmi;
-uint32_t bscan_tunnel_data_register_select_dmi_num_fields = DIM(_bscan_tunnel_data_register_select_dmi);
+uint32_t bscan_tunnel_data_register_select_dmi_num_fields = ARRAY_SIZE(_bscan_tunnel_data_register_select_dmi);
 
 struct trigger {
 	uint64_t address;
@@ -348,8 +346,8 @@ uint32_t dtmcontrol_scan_via_bscan(struct target *target, uint32_t out)
 		tunneled_dr[0].in_value = NULL;
 	}
 	jtag_add_ir_scan(target->tap, &select_user4, TAP_IDLE);
-	jtag_add_dr_scan(target->tap, DIM(tunneled_ir), tunneled_ir, TAP_IDLE);
-	jtag_add_dr_scan(target->tap, DIM(tunneled_dr), tunneled_dr, TAP_IDLE);
+	jtag_add_dr_scan(target->tap, ARRAY_SIZE(tunneled_ir), tunneled_ir, TAP_IDLE);
+	jtag_add_dr_scan(target->tap, ARRAY_SIZE(tunneled_dr), tunneled_dr, TAP_IDLE);
 	select_dmi_via_bscan(target);
 
 	int retval = jtag_execute_queue();
@@ -953,7 +951,7 @@ static int old_or_new_riscv_step(struct target *target, int current,
 {
 	RISCV_INFO(r);
 	LOG_DEBUG("handle_breakpoints=%d", handle_breakpoints);
-	if (r->is_halted == NULL)
+	if (!r->is_halted)
 		return oldriscv_step(target, current, address, handle_breakpoints);
 	else
 		return riscv_openocd_step(target, current, address, handle_breakpoints);
@@ -977,7 +975,7 @@ static int riscv_examine(struct target *target)
 	LOG_DEBUG("  version=0x%x", info->dtm_version);
 
 	struct target_type *tt = get_target_type(target);
-	if (tt == NULL)
+	if (!tt)
 		return ERROR_FAIL;
 
 	int result = tt->init_target(info->cmd_ctx, target);
@@ -996,7 +994,7 @@ static int oldriscv_poll(struct target *target)
 static int old_or_new_riscv_poll(struct target *target)
 {
 	RISCV_INFO(r);
-	if (r->is_halted == NULL)
+	if (!r->is_halted)
 		return oldriscv_poll(target);
 	else
 		return riscv_openocd_poll(target);
@@ -1051,7 +1049,7 @@ int halt_go(struct target *target)
 {
 	riscv_info_t *r = riscv_info(target);
 	int result;
-	if (r->is_halted == NULL) {
+	if (!r->is_halted) {
 		struct target_type *tt = get_target_type(target);
 		result = tt->halt(target);
 	} else {
@@ -1073,7 +1071,7 @@ int riscv_halt(struct target *target)
 {
 	RISCV_INFO(r);
 
-	if (r->is_halted == NULL) {
+	if (!r->is_halted) {
 		struct target_type *tt = get_target_type(target);
 		return tt->halt(target);
 	}
@@ -1299,7 +1297,7 @@ static int resume_go(struct target *target, int current,
 {
 	riscv_info_t *r = riscv_info(target);
 	int result;
-	if (r->is_halted == NULL) {
+	if (!r->is_halted) {
 		struct target_type *tt = get_target_type(target);
 		result = tt->resume(target, current, address, handle_breakpoints,
 				debug_execution);
@@ -1616,6 +1614,18 @@ static int riscv_write_memory(struct target *target, target_addr_t address,
 	return tt->write_memory(target, address, size, count, buffer);
 }
 
+const char *riscv_get_gdb_arch(struct target *target)
+{
+	switch (riscv_xlen(target)) {
+		case 32:
+			return "riscv:rv32";
+		case 64:
+			return "riscv:rv64";
+	}
+	LOG_ERROR("Unsupported xlen: %d", riscv_xlen(target));
+	return NULL;
+}
+
 static int riscv_get_gdb_reg_list_internal(struct target *target,
 		struct reg **reg_list[], int *reg_list_size,
 		enum target_register_class reg_class, bool read)
@@ -1706,7 +1716,7 @@ static int riscv_run_algorithm(struct target *target, int num_mem_params,
 	}
 
 	/* Save registers */
-	struct reg *reg_pc = register_get_by_name(target->reg_cache, "pc", 1);
+	struct reg *reg_pc = register_get_by_name(target->reg_cache, "pc", true);
 	if (!reg_pc || reg_pc->type->get(reg_pc) != ERROR_OK)
 		return ERROR_FAIL;
 	uint64_t saved_pc = buf_get_u64(reg_pc->value, 0, reg_pc->size);
@@ -1715,7 +1725,7 @@ static int riscv_run_algorithm(struct target *target, int num_mem_params,
 	uint64_t saved_regs[32];
 	for (int i = 0; i < num_reg_params; i++) {
 		LOG_DEBUG("save %s", reg_params[i].reg_name);
-		struct reg *r = register_get_by_name(target->reg_cache, reg_params[i].reg_name, 0);
+		struct reg *r = register_get_by_name(target->reg_cache, reg_params[i].reg_name, false);
 		if (!r) {
 			LOG_ERROR("Couldn't find register named '%s'", reg_params[i].reg_name);
 			return ERROR_FAIL;
@@ -1749,7 +1759,7 @@ static int riscv_run_algorithm(struct target *target, int num_mem_params,
 
 	LOG_DEBUG("Disabling Interrupts");
 	struct reg *reg_mstatus = register_get_by_name(target->reg_cache,
-			"mstatus", 1);
+			"mstatus", true);
 	if (!reg_mstatus) {
 		LOG_ERROR("Couldn't find mstatus!");
 		return ERROR_FAIL;
@@ -1788,7 +1798,7 @@ static int riscv_run_algorithm(struct target *target, int num_mem_params,
 				GDB_REGNO_PC,
 				GDB_REGNO_MSTATUS, GDB_REGNO_MEPC, GDB_REGNO_MCAUSE,
 			};
-			for (unsigned i = 0; i < DIM(regnums); i++) {
+			for (unsigned i = 0; i < ARRAY_SIZE(regnums); i++) {
 				enum gdb_regno regno = regnums[i];
 				riscv_reg_t reg_value;
 				if (riscv_get_register(target, &reg_value, regno) != ERROR_OK)
@@ -1830,7 +1840,7 @@ static int riscv_run_algorithm(struct target *target, int num_mem_params,
 	for (int i = 0; i < num_reg_params; i++) {
 		if (reg_params[i].direction == PARAM_IN ||
 				reg_params[i].direction == PARAM_IN_OUT) {
-			struct reg *r = register_get_by_name(target->reg_cache, reg_params[i].reg_name, 0);
+			struct reg *r = register_get_by_name(target->reg_cache, reg_params[i].reg_name, false);
 			if (r->type->get(r) != ERROR_OK) {
 				LOG_ERROR("get(%s) failed", r->name);
 				return ERROR_FAIL;
@@ -1838,7 +1848,7 @@ static int riscv_run_algorithm(struct target *target, int num_mem_params,
 			buf_cpy(r->value, reg_params[i].value, reg_params[i].size);
 		}
 		LOG_DEBUG("restore %s", reg_params[i].reg_name);
-		struct reg *r = register_get_by_name(target->reg_cache, reg_params[i].reg_name, 0);
+		struct reg *r = register_get_by_name(target->reg_cache, reg_params[i].reg_name, false);
 		buf_set_u64(buf, 0, info->xlen[0], saved_regs[r->number]);
 		if (r->type->set(r, buf) != ERROR_OK) {
 			LOG_ERROR("set(%s) failed", r->name);
@@ -1860,10 +1870,10 @@ static int riscv_checksum_memory(struct target *target,
 	LOG_DEBUG("address=0x%" TARGET_PRIxADDR "; count=0x%" PRIx32, address, count);
 
 	static const uint8_t riscv32_crc_code[] = {
-#include "../../contrib/loaders/checksum/riscv32_crc.inc"
+#include "contrib/loaders/checksum/riscv32_crc.inc"
 	};
 	static const uint8_t riscv64_crc_code[] = {
-#include "../../contrib/loaders/checksum/riscv64_crc.inc"
+#include "contrib/loaders/checksum/riscv64_crc.inc"
 	};
 
 	static const uint8_t *crc_code;
@@ -2040,16 +2050,14 @@ int riscv_openocd_poll(struct target *target)
 	} else if (target->smp) {
 		unsigned halts_discovered = 0;
 		unsigned total_targets = 0;
-		bool newly_halted[RISCV_MAX_HARTS] = {0};
 		unsigned should_remain_halted = 0;
 		unsigned should_resume = 0;
 		unsigned i = 0;
-		for (struct target_list *list = target->head; list != NULL;
+		for (struct target_list *list = target->head; list;
 				list = list->next, i++) {
 			total_targets++;
 			struct target *t = list->target;
 			riscv_info_t *r = riscv_info(t);
-			assert(i < DIM(newly_halted));
 			enum riscv_poll_hart out = riscv_poll_hart(t, r->current_hartid);
 			switch (out) {
 			case RPH_NO_CHANGE:
@@ -2060,7 +2068,6 @@ int riscv_openocd_poll(struct target *target)
 				break;
 			case RPH_DISCOVERED_HALTED:
 				halts_discovered++;
-				newly_halted[i] = true;
 				t->state = TARGET_HALTED;
 				enum riscv_halt_reason halt_reason =
 					riscv_halt_reason(t, r->current_hartid);
@@ -2818,6 +2825,14 @@ static unsigned riscv_xlen_nonconst(struct target *target)
 	return riscv_xlen(target);
 }
 
+static unsigned int riscv_data_bits(struct target *target)
+{
+	RISCV_INFO(r);
+	if (r->data_bits)
+		return r->data_bits(target);
+	return riscv_xlen(target);
+}
+
 struct target_type riscv_target = {
 	.name = "riscv",
 
@@ -2845,6 +2860,7 @@ struct target_type riscv_target = {
 	.mmu = riscv_mmu,
 	.virt2phys = riscv_virt2phys,
 
+	.get_gdb_arch = riscv_get_gdb_arch,
 	.get_gdb_reg_list = riscv_get_gdb_reg_list,
 	.get_gdb_reg_list_noread = riscv_get_gdb_reg_list_noread,
 
@@ -2862,6 +2878,7 @@ struct target_type riscv_target = {
 	.commands = riscv_command_handlers,
 
 	.address_bits = riscv_xlen_nonconst,
+	.data_bits = riscv_data_bits
 };
 
 /*** RISC-V Interface ***/
@@ -3039,10 +3056,10 @@ void riscv_set_rtos_hartid(struct target *target, int hartid)
 
 int riscv_count_harts(struct target *target)
 {
-	if (target == NULL)
+	if (!target)
 		return 1;
 	RISCV_INFO(r);
-	if (r == NULL || r->hart_count == NULL)
+	if (!r || !r->hart_count)
 		return 1;
 	return r->hart_count(target);
 }
@@ -3771,7 +3788,7 @@ int riscv_init_registers(struct target *target)
 #undef DECLARE_CSR
 	};
 	/* encoding.h does not contain the registers in sorted order. */
-	qsort(csr_info, DIM(csr_info), sizeof(*csr_info), cmp_csr_info);
+	qsort(csr_info, ARRAY_SIZE(csr_info), sizeof(*csr_info), cmp_csr_info);
 	unsigned csr_info_index = 0;
 
 	unsigned custom_range_index = 0;
@@ -4031,7 +4048,7 @@ int riscv_init_registers(struct target *target)
 			unsigned csr_number = number - GDB_REGNO_CSR0;
 
 			while (csr_info[csr_info_index].number < csr_number &&
-					csr_info_index < DIM(csr_info) - 1) {
+					csr_info_index < ARRAY_SIZE(csr_info) - 1) {
 				csr_info_index++;
 			}
 			if (csr_info[csr_info_index].number == csr_number) {

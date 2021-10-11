@@ -203,7 +203,7 @@ static scmRTOS_params_t scmRTOS_params[] =
         cmSTACK_POINTER_OFFSET,
         cmSTACK_POINTER_SIZE,
         cmTIMEOUT_OFFSET,
-        &rtos_standard_Cortex_M3_stacking 
+        &rtos_standard_cortex_m3_stacking 
     },
     {
         "hla_target",                 // st-link      
@@ -218,7 +218,7 @@ static scmRTOS_params_t scmRTOS_params[] =
         cmSTACK_POINTER_OFFSET,
         cmSTACK_POINTER_SIZE,
         cmTIMEOUT_OFFSET,
-        &rtos_standard_Cortex_M3_stacking 
+        &rtos_standard_cortex_m3_stacking 
     },
     {
         "arm7tdmi",                 

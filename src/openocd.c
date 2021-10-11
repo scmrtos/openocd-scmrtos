@@ -131,7 +131,7 @@ COMMAND_HANDLER(handle_init_command)
 	initialized = 1;
 
 	retval = command_run_line(CMD_CTX, "target init");
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return ERROR_FAIL;
 
 	retval = adapter_init(CMD_CTX);
@@ -150,11 +150,11 @@ COMMAND_HANDLER(handle_init_command)
 	command_context_mode(CMD_CTX, COMMAND_EXEC);
 
 	retval = command_run_line(CMD_CTX, "transport init");
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return ERROR_FAIL;
 
 	retval = command_run_line(CMD_CTX, "dap init");
-	if (ERROR_OK != retval)
+	if (retval != ERROR_OK)
 		return ERROR_FAIL;
 
 	LOG_DEBUG("Examining targets...");
@@ -234,6 +234,65 @@ static int openocd_register_commands(struct command_context *cmd_ctx)
 	return register_commands(cmd_ctx, NULL, openocd_command_handlers);
 }
 
+/*
+ * TODO: to be removed after v0.12.0
+ * workaround for syntax change of "expr" in jimtcl 0.81
+ * replace "expr" with openocd version that prints the deprecated msg
+ */
+struct jim_scriptobj {
+	void *token;
+	Jim_Obj *filename_obj;
+	int len;
+	int subst_flags;
+	int in_use;
+	int firstline;
+	int linenr;
+	int missing;
+};
+
+static int jim_expr_command(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
+{
+	if (argc == 2)
+		return Jim_EvalExpression(interp, argv[1]);
+
+	if (argc > 2) {
+		Jim_Obj *obj = Jim_ConcatObj(interp, argc - 1, argv + 1);
+		Jim_IncrRefCount(obj);
+		const char *s = Jim_String(obj);
+		struct jim_scriptobj *script = Jim_GetIntRepPtr(interp->currentScriptObj);
+		if (interp->currentScriptObj == interp->emptyObj ||
+				strcmp(interp->currentScriptObj->typePtr->name, "script") ||
+				script->subst_flags ||
+				script->filename_obj == interp->emptyObj)
+			LOG_WARNING("DEPRECATED! use 'expr { %s }' not 'expr %s'", s, s);
+		else
+			LOG_WARNING("DEPRECATED! (%s:%d) use 'expr { %s }' not 'expr %s'",
+						Jim_String(script->filename_obj), script->linenr, s, s);
+		int retcode = Jim_EvalExpression(interp, obj);
+		Jim_DecrRefCount(interp, obj);
+		return retcode;
+	}
+
+	Jim_WrongNumArgs(interp, 1, argv, "expression ?...?");
+	return JIM_ERR;
+}
+
+static const struct command_registration expr_handler[] = {
+	{
+		.name = "expr",
+		.jim_handler = jim_expr_command,
+		.mode = COMMAND_ANY,
+		.help = "",
+		.usage = "",
+	},
+	COMMAND_REGISTRATION_DONE
+};
+
+static int workaround_for_jimtcl_expr(struct command_context *cmd_ctx)
+{
+	return register_commands(cmd_ctx, NULL, expr_handler);
+}
+
 struct command_context *global_cmd_ctx;
 
 static struct command_context *setup_command_handler(Jim_Interp *interp)
@@ -246,6 +305,7 @@ static struct command_context *setup_command_handler(Jim_Interp *interp)
 	/* register subsystem commands */
 	typedef int (*command_registrant_t)(struct command_context *cmd_ctx_value);
 	static const command_registrant_t command_registrants[] = {
+		&workaround_for_jimtcl_expr,
 		&openocd_register_commands,
 		&server_register_commands,
 		&gdb_register_commands,
@@ -262,9 +322,9 @@ static struct command_context *setup_command_handler(Jim_Interp *interp)
 		&arm_tpiu_swo_register_commands,
 		NULL
 	};
-	for (unsigned i = 0; NULL != command_registrants[i]; i++) {
+	for (unsigned i = 0; command_registrants[i]; i++) {
 		int retval = (*command_registrants[i])(cmd_ctx);
-		if (ERROR_OK != retval) {
+		if (retval != ERROR_OK) {
 			command_done(cmd_ctx);
 			return NULL;
 		}
@@ -303,12 +363,12 @@ static int openocd_thread(int argc, char *argv[], struct command_context *cmd_ct
 	}
 
 	ret = server_init(cmd_ctx);
-	if (ERROR_OK != ret)
+	if (ret != ERROR_OK)
 		return ERROR_FAIL;
 
 	if (init_at_startup) {
 		ret = command_run_line(cmd_ctx, "init");
-		if (ERROR_OK != ret) {
+		if (ret != ERROR_OK) {
 			server_quit();
 			return ERROR_FAIL;
 		}
@@ -364,8 +424,8 @@ int openocd_main(int argc, char *argv[])
 	help_del_all_commands(cmd_ctx);
 
 	/* free all DAP and CTI objects */
-	dap_cleanup_all();
 	arm_cti_cleanup_all();
+	dap_cleanup_all();
 
 	adapter_quit();
 
@@ -377,9 +437,9 @@ int openocd_main(int argc, char *argv[])
 	rtt_exit();
 	free_config();
 
-	if (ERROR_FAIL == ret)
+	if (ret == ERROR_FAIL)
 		return EXIT_FAILURE;
-	else if (ERROR_OK != ret)
+	else if (ret != ERROR_OK)
 		exit_on_signal(ret);
 
 	return ret;

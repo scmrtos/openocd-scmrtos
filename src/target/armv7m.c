@@ -44,6 +44,8 @@
 #include "algorithm.h"
 #include "register.h"
 #include "semihosting_common.h"
+#include <helper/log.h>
+#include <helper/binarybuffer.h>
 
 #if 0
 #define _DEBUG_INSTRUCTION_EXECUTION_
@@ -474,7 +476,7 @@ int armv7m_get_gdb_reg_list(struct target *target, struct reg **reg_list[],
 		size = ARMV7M_NUM_CORE_REGS;
 
 	*reg_list = malloc(sizeof(struct reg *) * size);
-	if (*reg_list == NULL)
+	if (!*reg_list)
 		return ERROR_FAIL;
 
 	for (i = 0; i < size; i++)
@@ -559,7 +561,7 @@ int armv7m_start_algorithm(struct target *target,
 			continue;
 
 		struct reg *reg =
-			register_get_by_name(armv7m->arm.core_cache, reg_params[i].reg_name, 0);
+			register_get_by_name(armv7m->arm.core_cache, reg_params[i].reg_name, false);
 /*		uint32_t regvalue; */
 
 		if (!reg) {
@@ -675,7 +677,7 @@ int armv7m_wait_algorithm(struct target *target,
 		if (reg_params[i].direction != PARAM_OUT) {
 			struct reg *reg = register_get_by_name(armv7m->arm.core_cache,
 					reg_params[i].reg_name,
-					0);
+					false);
 
 			if (!reg) {
 				LOG_ERROR("BUG: register '%s' not found", reg_params[i].reg_name);
@@ -967,7 +969,7 @@ int armv7m_blank_check_memory(struct target *target,
 		blocks_to_check = num_blocks;
 
 	struct algo_block *params = malloc((blocks_to_check+1)*sizeof(struct algo_block));
-	if (params == NULL) {
+	if (!params) {
 		retval = ERROR_FAIL;
 		goto cleanup1;
 	}

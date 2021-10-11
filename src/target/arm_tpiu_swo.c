@@ -73,7 +73,7 @@ enum arm_tpiu_swo_event {
 	TPIU_SWO_EVENT_POST_DISABLE,
 };
 
-static const Jim_Nvp nvp_arm_tpiu_swo_event[] = {
+static const struct jim_nvp nvp_arm_tpiu_swo_event[] = {
 	{ .value = TPIU_SWO_EVENT_PRE_ENABLE,   .name = "pre-enable" },
 	{ .value = TPIU_SWO_EVENT_POST_ENABLE,  .name = "post-enable" },
 	{ .value = TPIU_SWO_EVENT_PRE_DISABLE,  .name = "pre-disable" },
@@ -168,7 +168,7 @@ static void arm_tpiu_swo_handle_event(struct arm_tpiu_swo_object *obj, enum arm_
 
 		LOG_DEBUG("TPIU/SWO: %s event: %s (%d) action : %s",
 			obj->name,
-			Jim_Nvp_value2name_simple(nvp_arm_tpiu_swo_event, event)->name,
+			jim_nvp_value2name_simple(nvp_arm_tpiu_swo_event, event)->name,
 			event,
 			Jim_GetString(ea->body, NULL));
 
@@ -185,7 +185,7 @@ static void arm_tpiu_swo_handle_event(struct arm_tpiu_swo_object *obj, enum arm_
 
 		Jim_MakeErrorMessage(ea->interp);
 		LOG_USER("Error executing event %s on TPIU/SWO %s:\n%s",
-			Jim_Nvp_value2name_simple(nvp_arm_tpiu_swo_event, event)->name,
+			jim_nvp_value2name_simple(nvp_arm_tpiu_swo_event, event)->name,
 			obj->name,
 			Jim_GetString(Jim_GetResult(ea->interp), NULL));
 		/* clean both error code and stacktrace before return */
@@ -297,7 +297,7 @@ COMMAND_HANDLER(handle_arm_tpiu_swo_event_list)
 			"----------------------------------------");
 
 	for (struct arm_tpiu_swo_event_action *ea = obj->event_action; ea; ea = ea->next) {
-		Jim_Nvp *opt = Jim_Nvp_value2name_simple(nvp_arm_tpiu_swo_event, ea->event);
+		struct jim_nvp *opt = jim_nvp_value2name_simple(nvp_arm_tpiu_swo_event, ea->event);
 		command_print(CMD, "%-25s | %s",
 				opt->name, Jim_GetString(ea->body, NULL));
 	}
@@ -315,7 +315,7 @@ enum arm_tpiu_swo_cfg_param {
 	CFG_EVENT,
 };
 
-static const Jim_Nvp nvp_arm_tpiu_swo_config_opts[] = {
+static const struct jim_nvp nvp_arm_tpiu_swo_config_opts[] = {
 	{ .name = "-port-width",    .value = CFG_PORT_WIDTH },
 	{ .name = "-protocol",      .value = CFG_PROTOCOL },
 	{ .name = "-formatter",     .value = CFG_FORMATTER },
@@ -323,21 +323,21 @@ static const Jim_Nvp nvp_arm_tpiu_swo_config_opts[] = {
 	{ .name = "-pin-freq",      .value = CFG_BITRATE },
 	{ .name = "-output",        .value = CFG_OUTFILE },
 	{ .name = "-event",         .value = CFG_EVENT },
-	/* handled by mem_ap_spot, added for Jim_GetOpt_NvpUnknown() */
+	/* handled by mem_ap_spot, added for jim_getopt_nvp_unknown() */
 	{ .name = "-dap",           .value = -1 },
 	{ .name = "-ap-num",        .value = -1 },
 	{ .name = "-baseaddr",      .value = -1 },
 	{ .name = NULL,             .value = -1 },
 };
 
-static const Jim_Nvp nvp_arm_tpiu_swo_protocol_opts[] = {
+static const struct jim_nvp nvp_arm_tpiu_swo_protocol_opts[] = {
 	{ .name = "sync",           .value = TPIU_SPPR_PROTOCOL_SYNC },
 	{ .name = "uart",           .value = TPIU_SPPR_PROTOCOL_UART },
 	{ .name = "manchester",     .value = TPIU_SPPR_PROTOCOL_MANCHESTER },
 	{ .name = NULL,             .value = -1 },
 };
 
-static const Jim_Nvp nvp_arm_tpiu_swo_bool_opts[] = {
+static const struct jim_nvp nvp_arm_tpiu_swo_bool_opts[] = {
 	{ .name = "on",             .value = 1 },
 	{ .name = "yes",            .value = 1 },
 	{ .name = "1",              .value = 1 },
@@ -349,9 +349,9 @@ static const Jim_Nvp nvp_arm_tpiu_swo_bool_opts[] = {
 	{ .name = NULL,             .value = -1 },
 };
 
-static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_object *obj)
+static int arm_tpiu_swo_configure(struct jim_getopt_info *goi, struct arm_tpiu_swo_object *obj)
 {
-	assert(obj != NULL);
+	assert(obj);
 
 	if (goi->isconfigure && obj->enabled) {
 		Jim_SetResultFormatted(goi->interp, "Cannot configure TPIU/SWO; %s is enabled!", obj->name);
@@ -368,10 +368,10 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 		if (e == JIM_ERR)
 			return e;
 
-		Jim_Nvp *n;
-		e = Jim_GetOpt_Nvp(goi, nvp_arm_tpiu_swo_config_opts, &n);
+		struct jim_nvp *n;
+		e = jim_getopt_nvp(goi, nvp_arm_tpiu_swo_config_opts, &n);
 		if (e != JIM_OK) {
-			Jim_GetOpt_NvpUnknown(goi, nvp_arm_tpiu_swo_config_opts, 0);
+			jim_getopt_nvp_unknown(goi, nvp_arm_tpiu_swo_config_opts, 0);
 			return e;
 		}
 
@@ -379,7 +379,7 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 		case CFG_PORT_WIDTH:
 			if (goi->isconfigure) {
 				jim_wide port_width;
-				e = Jim_GetOpt_Wide(goi, &port_width);
+				e = jim_getopt_wide(goi, &port_width);
 				if (e != JIM_OK)
 					return e;
 				if (port_width < 1 || port_width > 32) {
@@ -395,16 +395,16 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 			break;
 		case CFG_PROTOCOL:
 			if (goi->isconfigure) {
-				Jim_Nvp *p;
-				e = Jim_GetOpt_Nvp(goi, nvp_arm_tpiu_swo_protocol_opts, &p);
+				struct jim_nvp *p;
+				e = jim_getopt_nvp(goi, nvp_arm_tpiu_swo_protocol_opts, &p);
 				if (e != JIM_OK)
 					return e;
 				obj->pin_protocol = p->value;
 			} else {
 				if (goi->argc)
 					goto err_no_params;
-				Jim_Nvp *p;
-				e = Jim_Nvp_value2name(goi->interp, nvp_arm_tpiu_swo_protocol_opts, obj->pin_protocol, &p);
+				struct jim_nvp *p;
+				e = jim_nvp_value2name(goi->interp, nvp_arm_tpiu_swo_protocol_opts, obj->pin_protocol, &p);
 				if (e != JIM_OK) {
 					Jim_SetResultString(goi->interp, "protocol error", -1);
 					return JIM_ERR;
@@ -414,16 +414,16 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 			break;
 		case CFG_FORMATTER:
 			if (goi->isconfigure) {
-				Jim_Nvp *p;
-				e = Jim_GetOpt_Nvp(goi, nvp_arm_tpiu_swo_bool_opts, &p);
+				struct jim_nvp *p;
+				e = jim_getopt_nvp(goi, nvp_arm_tpiu_swo_bool_opts, &p);
 				if (e != JIM_OK)
 					return e;
 				obj->en_formatter = p->value;
 			} else {
 				if (goi->argc)
 					goto err_no_params;
-				Jim_Nvp *p;
-				e = Jim_Nvp_value2name(goi->interp, nvp_arm_tpiu_swo_bool_opts, obj->en_formatter, &p);
+				struct jim_nvp *p;
+				e = jim_nvp_value2name(goi->interp, nvp_arm_tpiu_swo_bool_opts, obj->en_formatter, &p);
 				if (e != JIM_OK) {
 					Jim_SetResultString(goi->interp, "formatter error", -1);
 					return JIM_ERR;
@@ -434,7 +434,7 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 		case CFG_TRACECLKIN:
 			if (goi->isconfigure) {
 				jim_wide clk;
-				e = Jim_GetOpt_Wide(goi, &clk);
+				e = jim_getopt_wide(goi, &clk);
 				if (e != JIM_OK)
 					return e;
 				obj->traceclkin_freq = clk;
@@ -447,7 +447,7 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 		case CFG_BITRATE:
 			if (goi->isconfigure) {
 				jim_wide clk;
-				e = Jim_GetOpt_Wide(goi, &clk);
+				e = jim_getopt_wide(goi, &clk);
 				if (e != JIM_OK)
 					return e;
 				obj->swo_pin_freq = clk;
@@ -460,7 +460,7 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 		case CFG_OUTFILE:
 			if (goi->isconfigure) {
 				const char *s;
-				e = Jim_GetOpt_String(goi, &s, NULL);
+				e = jim_getopt_string(goi, &s, NULL);
 				if (e != JIM_OK)
 					return e;
 				if (s[0] == ':') {
@@ -498,13 +498,13 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 			}
 
 			{
-				Jim_Nvp *p;
+				struct jim_nvp *p;
 				Jim_Obj *o;
 				struct arm_tpiu_swo_event_action *ea = obj->event_action;
 
-				e = Jim_GetOpt_Nvp(goi, nvp_arm_tpiu_swo_event, &p);
+				e = jim_getopt_nvp(goi, nvp_arm_tpiu_swo_event, &p);
 				if (e != JIM_OK) {
-					Jim_GetOpt_NvpUnknown(goi, nvp_arm_tpiu_swo_event, 1);
+					jim_getopt_nvp_unknown(goi, nvp_arm_tpiu_swo_event, 1);
 					return e;
 				}
 
@@ -529,7 +529,7 @@ static int arm_tpiu_swo_configure(Jim_GetOptInfo *goi, struct arm_tpiu_swo_objec
 						Jim_DecrRefCount(ea->interp, ea->body);
 					ea->event = p->value;
 					ea->interp = goi->interp;
-					Jim_GetOpt_Obj(goi, &o);
+					jim_getopt_obj(goi, &o);
 					ea->body = Jim_DuplicateObj(goi->interp, o);
 					Jim_IncrRefCount(ea->body);
 				} else {
@@ -551,9 +551,9 @@ err_no_params:
 static int jim_arm_tpiu_swo_configure(Jim_Interp *interp, int argc, Jim_Obj * const *argv)
 {
 	struct command *c = jim_to_command(interp);
-	Jim_GetOptInfo goi;
+	struct jim_getopt_info goi;
 
-	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
+	jim_getopt_setup(&goi, interp, argc - 1, argv + 1);
 	goi.isconfigure = !strcmp(c->name, "configure");
 	if (goi.argc < 1) {
 		Jim_WrongNumArgs(goi.interp, goi.argc, goi.argv,
@@ -670,8 +670,8 @@ static int jim_arm_tpiu_swo_enable(Jim_Interp *interp, int argc, Jim_Obj *const 
 		value = 0;
 	}
 	if (!value) {
-		Jim_Nvp *p;
-		Jim_Nvp_value2name(interp, nvp_arm_tpiu_swo_protocol_opts, obj->pin_protocol, &p);
+		struct jim_nvp *p;
+		jim_nvp_value2name(interp, nvp_arm_tpiu_swo_protocol_opts, obj->pin_protocol, &p);
 		LOG_ERROR("%s does not support protocol %s", obj->name, p->name);
 		return JIM_ERR;
 	}
@@ -764,6 +764,10 @@ static int jim_arm_tpiu_swo_enable(Jim_Interp *interp, int argc, Jim_Obj *const 
 
 	arm_tpiu_swo_handle_event(obj, TPIU_SWO_EVENT_POST_ENABLE);
 
+	/* START_DEPRECATED_TPIU */
+	target_handle_event(target, TARGET_EVENT_TRACE_CONFIG);
+	/* END_DEPRECATED_TPIU */
+
 	obj->enabled = true;
 	return JIM_OK;
 
@@ -817,6 +821,13 @@ static int jim_arm_tpiu_swo_disable(Jim_Interp *interp, int argc, Jim_Obj *const
 	}
 
 	arm_tpiu_swo_handle_event(obj, TPIU_SWO_EVENT_POST_DISABLE);
+
+	/* START_DEPRECATED_TPIU */
+	struct command_context *cmd_ctx = current_command_context(interp);
+	struct target *target = get_current_target(cmd_ctx);
+	target_handle_event(target, TARGET_EVENT_TRACE_CONFIG);
+	/* END_DEPRECATED_TPIU */
+
 	return JIM_OK;
 }
 
@@ -866,10 +877,10 @@ static int arm_tpiu_swo_create(Jim_Interp *interp, struct arm_tpiu_swo_object *o
 	int e;
 
 	cmd_ctx = current_command_context(interp);
-	assert(cmd_ctx != NULL);
+	assert(cmd_ctx);
 
 	/* does this command exist? */
-	cmd = Jim_GetCommand(interp, Jim_NewStringObj(interp, obj->name, -1), JIM_ERRMSG);
+	cmd = Jim_GetCommand(interp, Jim_NewStringObj(interp, obj->name, -1), JIM_NONE);
 	if (cmd) {
 		Jim_SetResultFormatted(interp, "Command: %s Exists", obj->name);
 		return JIM_ERR;
@@ -887,7 +898,7 @@ static int arm_tpiu_swo_create(Jim_Interp *interp, struct arm_tpiu_swo_object *o
 		COMMAND_REGISTRATION_DONE
 	};
 	e = register_commands_with_data(cmd_ctx, NULL, obj_commands, obj);
-	if (ERROR_OK != e)
+	if (e != ERROR_OK)
 		return JIM_ERR;
 
 	list_add_tail(&obj->lh, &all_tpiu_swo);
@@ -897,8 +908,8 @@ static int arm_tpiu_swo_create(Jim_Interp *interp, struct arm_tpiu_swo_object *o
 
 static int jim_arm_tpiu_swo_create(Jim_Interp *interp, int argc, Jim_Obj *const *argv)
 {
-	Jim_GetOptInfo goi;
-	Jim_GetOpt_Setup(&goi, interp, argc - 1, argv + 1);
+	struct jim_getopt_info goi;
+	jim_getopt_setup(&goi, interp, argc - 1, argv + 1);
 	if (goi.argc < 1) {
 		Jim_WrongNumArgs(goi.interp, 1, goi.argv, "?name? ..options...");
 		return JIM_ERR;
@@ -915,7 +926,7 @@ static int jim_arm_tpiu_swo_create(Jim_Interp *interp, int argc, Jim_Obj *const 
 	obj->port_width = 1;
 
 	Jim_Obj *n;
-	Jim_GetOpt_Obj(&goi, &n);
+	jim_getopt_obj(&goi, &n);
 	obj->name = strdup(Jim_GetString(n, NULL));
 	if (!obj->name) {
 		LOG_ERROR("Out of memory");
@@ -1037,7 +1048,7 @@ COMMAND_HANDLER(handle_tpiu_deprecated_config_command)
 	}
 
 	unsigned int cmd_idx = 0;
-	if (CMD_ARGC == cmd_idx)
+	if (cmd_idx == CMD_ARGC)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	if (!strcmp(CMD_ARGV[cmd_idx], "disable")) {
@@ -1055,18 +1066,18 @@ COMMAND_HANDLER(handle_tpiu_deprecated_config_command)
 	const char *pin_clk = NULL;
 	if (!strcmp(CMD_ARGV[cmd_idx], "internal")) {
 		cmd_idx++;
-		if (CMD_ARGC == cmd_idx)
+		if (cmd_idx == CMD_ARGC)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		output = CMD_ARGV[cmd_idx];
 	} else if (strcmp(CMD_ARGV[cmd_idx], "external"))
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	cmd_idx++;
-	if (CMD_ARGC == cmd_idx)
+	if (cmd_idx == CMD_ARGC)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	if (!strcmp(CMD_ARGV[cmd_idx], "sync")) {
 		protocol = CMD_ARGV[cmd_idx];
 		cmd_idx++;
-		if (CMD_ARGC == cmd_idx)
+		if (cmd_idx == CMD_ARGC)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		port_width = CMD_ARGV[cmd_idx];
 	} else {
@@ -1074,20 +1085,20 @@ COMMAND_HANDLER(handle_tpiu_deprecated_config_command)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		protocol = CMD_ARGV[cmd_idx];
 		cmd_idx++;
-		if (CMD_ARGC == cmd_idx)
+		if (cmd_idx == CMD_ARGC)
 			return ERROR_COMMAND_SYNTAX_ERROR;
 		formatter = CMD_ARGV[cmd_idx];
 	}
 	cmd_idx++;
-	if (CMD_ARGC == cmd_idx)
+	if (cmd_idx == CMD_ARGC)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 	trace_clk = CMD_ARGV[cmd_idx];
 	cmd_idx++;
-	if (CMD_ARGC != cmd_idx) {
+	if (cmd_idx != CMD_ARGC) {
 		pin_clk = CMD_ARGV[cmd_idx];
 		cmd_idx++;
 	}
-	if (CMD_ARGC != cmd_idx)
+	if (cmd_idx != CMD_ARGC)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	LOG_INFO(MSG "Running: \'%s configure -protocol %s -traceclk %s" "%s%s" "%s%s" "%s%s" "%s%s\'",
@@ -1112,7 +1123,6 @@ COMMAND_HANDLER(handle_tpiu_deprecated_config_command)
 	if (retval != ERROR_OK)
 		return retval;
 
-	target_handle_event(target, TARGET_EVENT_TRACE_CONFIG);
 	return ERROR_OK;
 }
 

@@ -252,7 +252,7 @@ static int  armv8_flush_all_data(struct target *target)
 		struct target_list *head;
 		struct target *curr;
 		head = target->head;
-		while (head != (struct target_list *)NULL) {
+		while (head) {
 			curr = head->target;
 			if (curr->state == TARGET_HALTED) {
 				LOG_INFO("Wait flushing data l1 on core %" PRId32, curr->coreid);
@@ -417,7 +417,7 @@ int armv8_identify_cache(struct armv8_common *armv8)
 	armv8->armv8_mmu.armv8_cache.info = 1;
 
 	/*  if no l2 cache initialize l1 data cache flush function function */
-	if (armv8->armv8_mmu.armv8_cache.flush_all_data_cache == NULL) {
+	if (!armv8->armv8_mmu.armv8_cache.flush_all_data_cache) {
 		armv8->armv8_mmu.armv8_cache.display_cache_info =
 			armv8_handle_inner_cache_info_command;
 		armv8->armv8_mmu.armv8_cache.flush_all_data_cache =

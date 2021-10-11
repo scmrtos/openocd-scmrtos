@@ -18,14 +18,16 @@
 
 #include "target.h"
 #include "target_type.h"
-#include "arm.h"
 #include "arm_adi_v5.h"
 #include "register.h"
 
 #include <jtag/jtag.h>
 
+#define MEM_AP_COMMON_MAGIC 0x4DE4DA50
+
 struct mem_ap {
-	struct arm arm;
+	int common_magic;
+	struct adiv5_dap *dap;
 	struct adiv5_ap *ap;
 	int ap_num;
 };
@@ -36,7 +38,7 @@ static int mem_ap_target_create(struct target *target, Jim_Interp *interp)
 	struct adiv5_private_config *pc;
 
 	pc = (struct adiv5_private_config *)target->private_config;
-	if (pc == NULL)
+	if (!pc)
 		return ERROR_FAIL;
 
 	if (pc->ap_num == DP_APSEL_INVALID) {
@@ -45,14 +47,14 @@ static int mem_ap_target_create(struct target *target, Jim_Interp *interp)
 	}
 
 	mem_ap = calloc(1, sizeof(struct mem_ap));
-	if (mem_ap == NULL) {
+	if (!mem_ap) {
 		LOG_ERROR("Out of memory");
 		return ERROR_FAIL;
 	}
 
 	mem_ap->ap_num = pc->ap_num;
-	mem_ap->arm.common_magic = ARM_COMMON_MAGIC;
-	mem_ap->arm.dap = pc->dap;
+	mem_ap->common_magic = MEM_AP_COMMON_MAGIC;
+	mem_ap->dap = pc->dap;
 
 	target->arch_info = mem_ap;
 
@@ -137,7 +139,7 @@ static int mem_ap_examine(struct target *target)
 	struct mem_ap *mem_ap = target->arch_info;
 
 	if (!target_was_examined(target)) {
-		mem_ap->ap = dap_ap(mem_ap->arm.dap, mem_ap->ap_num);
+		mem_ap->ap = dap_ap(mem_ap->dap, mem_ap->ap_num);
 		target_set_examined(target);
 		target->state = TARGET_UNKNOWN;
 		target->debug_reason = DBG_REASON_UNDEFINED;
@@ -236,7 +238,7 @@ static int mem_ap_read_memory(struct target *target, target_addr_t address,
 	LOG_DEBUG("Reading memory at physical address " TARGET_ADDR_FMT
 		  "; size %" PRIu32 "; count %" PRIu32, address, size, count);
 
-	if (count == 0 || buffer == NULL)
+	if (count == 0 || !buffer)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	return mem_ap_read_buf(mem_ap->ap, buffer, size, count, address);
@@ -251,7 +253,7 @@ static int mem_ap_write_memory(struct target *target, target_addr_t address,
 	LOG_DEBUG("Writing memory at physical address " TARGET_ADDR_FMT
 		  "; size %" PRIu32 "; count %" PRIu32, address, size, count);
 
-	if (count == 0 || buffer == NULL)
+	if (count == 0 || !buffer)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	return mem_ap_write_buf(mem_ap->ap, buffer, size, count, address);

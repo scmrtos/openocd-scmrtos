@@ -2,6 +2,8 @@
 # have all needed files, that a GNU package needs
 AUTOMAKE_OPTIONS = gnu 1.6
 
+.DELETE_ON_ERROR:
+
 # make sure we pass the correct jimtcl flags to distcheck
 DISTCHECK_CONFIGURE_FLAGS = --disable-install-jim
 
@@ -34,7 +36,6 @@ AM_CFLAGS = $(GCC_WARNINGS)
 AM_CPPFLAGS = $(HOST_CPPFLAGS)\
 			  -I$(top_srcdir)/src \
 			  -I$(top_builddir)/src \
-			  -I$(top_srcdir)/src/helper \
 			  -DPKGDATADIR=\"$(pkgdatadir)\" \
 			  -DBINDIR=\"$(bindir)\"
 
@@ -57,6 +58,7 @@ EXTRA_DIST += \
 	LICENSES/preferred/GFDL-1.2 \
 	LICENSES/preferred/gfdl-1.2.texi.readme \
 	LICENSES/preferred/GPL-2.0 \
+	LICENSES/preferred/MIT \
 	LICENSES/stand-alone/GPL-3.0 \
 	tools/logger.pl \
 	tools/rlink_make_speed_table \

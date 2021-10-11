@@ -2,7 +2,7 @@ AC_PREREQ([2.69])
 AC_INIT([openocd], [0.11.0+dev],
   [OpenOCD Mailing List <openocd-devel@lists.sourceforge.net>])
 AC_CONFIG_SRCDIR([src/openocd.c])
-AC_CONFIG_AUX_DIR([.])
+AC_CONFIG_AUX_DIR([build-aux])
 
 m4_include([config_subdir.m4])dnl
 
@@ -570,9 +570,6 @@ AS_IF([test "x$build_xlnx_pcie_xvc" = "xyes"], [
 PKG_CHECK_MODULES([LIBUSB1], [libusb-1.0], [
 	use_libusb1=yes
 	AC_DEFINE([HAVE_LIBUSB1], [1], [Define if you have libusb-1.x])
-	PKG_CHECK_EXISTS([libusb-1.0 >= 1.0.9],
-		[AC_DEFINE([HAVE_LIBUSB_ERROR_NAME], [1], [Define if your libusb has libusb_error_name()])],
-		[AC_MSG_WARN([libusb-1.x older than 1.0.9 detected, consider updating])])
 	LIBUSB1_CFLAGS=`echo $LIBUSB1_CFLAGS | sed 's/-I/-isystem /'`
 	AC_MSG_NOTICE([libusb-1.0 header bug workaround: LIBUSB1_CFLAGS changed to "$LIBUSB1_CFLAGS"])
 	PKG_CHECK_EXISTS([libusb-1.0 >= 1.0.16],
@@ -637,6 +634,7 @@ m4_define([PROCESS_ADAPTERS], [
 			AC_MSG_ERROR([$3 is required for the ADAPTER_DESC([adapter])])
 		])
 		ADAPTER_VAR([adapter])=no
+		AC_DEFINE([BUILD_]ADAPTER_SYM([adapter]), [0], [0 if you do not want the ]ADAPTER_DESC([adapter]).)
 	])
 	AM_CONDITIONAL(ADAPTER_SYM([adapter]), [test "x$ADAPTER_VAR([adapter])" != "xno"])
   ])
@@ -756,6 +754,8 @@ AS_IF([test "x${gcc_wextra}" = "xyes"], [
   GCC_WARNINGS="${GCC_WARNINGS} -Wcast-align"
   GCC_WARNINGS="${GCC_WARNINGS} -Wredundant-decls"
   GCC_WARNINGS="${GCC_WARNINGS} -Wpointer-arith"
+  GCC_WARNINGS="${GCC_WARNINGS} -Wundef"
+  GCC_WARNINGS="${GCC_WARNINGS} -Wno-error=deprecated-declarations"
 ])
 AS_IF([test "x${gcc_werror}" = "xyes"], [
   GCC_WARNINGS="${GCC_WARNINGS} -Werror"

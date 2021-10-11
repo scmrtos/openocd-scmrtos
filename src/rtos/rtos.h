@@ -21,7 +21,7 @@
 
 #include "server/server.h"
 #include "target/target.h"
-#include <jim-nvp.h>
+#include <helper/jim-nvp.h>
 
 typedef int64_t threadid_t;
 typedef int64_t symbol_address_t;
@@ -82,6 +82,13 @@ struct rtos_type {
 	int (*clean)(struct target *target);
 	char * (*ps_command)(struct target *target);
 	int (*set_reg)(struct rtos *rtos, uint32_t reg_num, uint8_t *reg_value);
+	/* Implement these if different threads in the RTOS can see memory
+	 * differently (for instance because address translation might be different
+	 * for each thread). */
+	int (*read_buffer)(struct rtos *rtos, target_addr_t address, uint32_t size,
+			uint8_t *buffer);
+	int (*write_buffer)(struct rtos *rtos, target_addr_t address, uint32_t size,
+			const uint8_t *buffer);
 };
 
 struct stack_register_offset {
@@ -101,16 +108,16 @@ struct rtos_register_stacking {
 	 * just use stacking->stack_registers_size * stack_growth_direction
 	 * to calculate adjustment.
 	 */
-	int64_t (*calculate_process_stack)(struct target *target,
+	target_addr_t (*calculate_process_stack)(struct target *target,
 		const uint8_t *stack_data,
 		const struct rtos_register_stacking *stacking,
-		int64_t stack_ptr);
+		target_addr_t stack_ptr);
 	const struct stack_register_offset *register_offsets;
 };
 
 #define GDB_THREAD_PACKET_NOT_CONSUMED (-40)
 
-int rtos_create(Jim_GetOptInfo *goi, struct target *target);
+int rtos_create(struct jim_getopt_info *goi, struct target *target);
 void rtos_destroy(struct target *target);
 int rtos_set_reg(struct connection *connection, int reg_num,
 		uint8_t *reg_value);
@@ -127,5 +134,9 @@ void rtos_free_threadlist(struct rtos *rtos);
 int rtos_smp_init(struct target *target);
 /*  function for handling symbol access */
 int rtos_qsymbol(struct connection *connection, char const *packet, int packet_size);
+int rtos_read_buffer(struct target *target, target_addr_t address,
+		uint32_t size, uint8_t *buffer);
+int rtos_write_buffer(struct target *target, target_addr_t address,
+		uint32_t size, const uint8_t *buffer);
 
 #endif /* OPENOCD_RTOS_RTOS_H */

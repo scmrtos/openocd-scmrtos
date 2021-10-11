@@ -210,7 +210,7 @@ static int armv7a_l2x_cache_init(struct target *target, uint32_t base, uint32_t 
 
 	/*  initialize all targets in this cluster (smp target)
 	 *  l2 cache must be configured after smp declaration */
-	while (head != (struct target_list *)NULL) {
+	while (head) {
 		curr = head->target;
 		if (curr != target) {
 			armv7a = target_to_armv7a(curr);
@@ -325,7 +325,7 @@ static const struct command_registration arm7a_l2x_cache_commands[] = {
 		.name = "conf",
 		.handler = armv7a_l2x_cache_conf_cmd,
 		.mode = COMMAND_ANY,
-		.help = "configure l2x cache ",
+		.help = "configure l2x cache",
 		.usage = "<base_addr> <number_of_way>",
 	},
 	{

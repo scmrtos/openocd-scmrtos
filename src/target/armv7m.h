@@ -25,9 +25,10 @@
 #ifndef OPENOCD_TARGET_ARMV7M_H
 #define OPENOCD_TARGET_ARMV7M_H
 
-#include "arm_adi_v5.h"
 #include "arm.h"
 #include "armv7m_trace.h"
+
+struct adiv5_ap;
 
 extern const int armv7m_psp_reg_map[];
 extern const int armv7m_msp_reg_map[];
@@ -239,8 +240,8 @@ struct armv7m_common {
 	int fp_feature;
 	uint32_t demcr;
 
-	/* stlink is a high level adapter, does not support all functions */
-	bool stlink;
+	/* hla_target uses a high level adapter that does not support all functions */
+	bool is_hla_target;
 
 	struct armv7m_trace_config trace_config;
 

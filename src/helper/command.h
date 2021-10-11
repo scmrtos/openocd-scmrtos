@@ -24,8 +24,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <jim-nvp.h>
 
+#include <helper/jim-nvp.h>
 #include <helper/list.h>
 #include <helper/types.h>
 
@@ -83,6 +83,17 @@ struct command_invocation {
 	const char **argv;
 	Jim_Obj *output;
 };
+
+/**
+ * Return true if the command @c cmd is registered by OpenOCD.
+ */
+bool jimcmd_is_oocd_command(Jim_Cmd *cmd);
+
+/**
+ * Return the pointer to the command's private data specified during the
+ * registration of command @a cmd .
+ */
+void *jimcmd_privdata(Jim_Cmd *cmd);
 
 /**
  * Command handlers may be defined with more parameters than the base
@@ -416,7 +427,7 @@ DECLARE_PARSE_WRAPPER(_target_addr, target_addr_t);
 #define COMMAND_PARSE_NUMBER(type, in, out) \
 	do { \
 		int retval_macro_tmp = parse_ ## type(in, &(out)); \
-		if (ERROR_OK != retval_macro_tmp) { \
+		if (retval_macro_tmp != ERROR_OK) { \
 			command_print(CMD, stringify(out) \
 				" option value ('%s') is not valid", in); \
 			return retval_macro_tmp; \
@@ -478,7 +489,7 @@ DECLARE_PARSE_WRAPPER(_target_addr, target_addr_t);
 	do { \
 		bool value; \
 		int retval_macro_tmp = command_parse_bool_arg(in, &value); \
-		if (ERROR_OK != retval_macro_tmp) { \
+		if (retval_macro_tmp != ERROR_OK) { \
 			command_print(CMD, stringify(out) \
 				" option value ('%s') is not valid", in); \
 			command_print(CMD, "  choices are '%s' or '%s'", \
