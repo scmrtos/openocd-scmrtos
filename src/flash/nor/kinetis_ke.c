@@ -1044,7 +1044,7 @@ static int kinetis_ke_write_eeprom(struct flash_bank *bank, const uint8_t *buffe
 	if (result != ERROR_OK)
 		return result;
 
-	while(count) {
+	while( count ) {
 		FCCOBIX[0] = 0;
 		FCCOBHI[0] = FTMRX_CMD_PROGEE;
 		FCCOBLO[0] = (bank->base + offset) >> 16;
@@ -1053,24 +1053,23 @@ static int kinetis_ke_write_eeprom(struct flash_bank *bank, const uint8_t *buffe
 		FCCOBHI[1] = (bank->base + offset) >> 8;
 		FCCOBLO[1] = (bank->base + offset);
 
-
-        uint8_t chunk_size = count > 4 ? 4 : count;
-        count -= chunk_size;
-        offset += chunk_size;
-        uint8_t cmd_size = 2;
-        while(chunk_size--) {
-            FCCOBIX[cmd_size] = cmd_size;
-            FCCOBHI[cmd_size] = 0;
-            FCCOBLO[cmd_size] = *buffer++;
-            ++cmd_size;
-        }
+		uint8_t chunk_size = count > 4 ? 4 : count;
+		count -= chunk_size;
+		offset += chunk_size;
+		uint8_t cmd_size = 2;
+		while( chunk_size-- ) {
+			FCCOBIX[cmd_size] = cmd_size;
+			FCCOBHI[cmd_size] = 0;
+			FCCOBLO[cmd_size] = *buffer++;
+			++cmd_size;
+		}
 		result = kinetis_ke_ftmrx_command(bank, cmd_size, FCCOBIX, FCCOBHI, FCCOBLO, &fstat);
 
 		if (result != ERROR_OK)	{
 			LOG_WARNING("eeprom write to offset 0x%" PRIx32 "...0x%" PRIx32 " failed"
-            , offset - (cmd_size - 2)
-            , offset - 1
-            );
+				, offset - (cmd_size - 2)
+				, offset - 1
+			);
 			return ERROR_FLASH_OPERATION_FAILED;
 		}
 	}
