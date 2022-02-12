@@ -90,6 +90,9 @@
 #define FTMRX_CMD_SETMARGINLVL		0x0D
 #define FTMRX_CMD_SETFACTORYLVL		0x0E
 #define FTMRX_CMD_CONFIGNVM			0x0F
+#define FTMRX_CMD_SECTIONERASEDEE	0x10
+#define FTMRX_CMD_PROGEE			0x11
+#define FTMRX_CMD_ERASESECTOREE		0x12
 
 /* Error codes */
 #define FTMRX_ERROR_ACCERR			0x20
@@ -980,6 +983,101 @@ static int kinetis_ke_erase(struct flash_bank *bank, unsigned int first,
 	return ERROR_OK;
 }
 
+
+static int kinetis_ke_erase_eeprom(struct flash_bank *bank, unsigned int first,
+		unsigned int last)
+{
+	int result;
+	uint8_t FCCOBIX[2], FCCOBHI[2], FCCOBLO[2], fstat;
+
+	if (bank->target->state != TARGET_HALTED) {
+		LOG_ERROR("Target not halted");
+		return ERROR_TARGET_NOT_HALTED;
+	}
+
+	if ((first > bank->num_sectors) || (last > bank->num_sectors))
+		return ERROR_FLASH_OPERATION_FAILED;
+
+	result = kinetis_ke_prepare_flash(bank);
+	if (result != ERROR_OK)
+		return result;
+
+	for (unsigned int i = first; i <= last; i++) {
+		FCCOBIX[0] = 0;
+		FCCOBHI[0] = FTMRX_CMD_ERASESECTOREE;
+		FCCOBLO[0] = (bank->base + bank->sectors[i].offset) >> 16;
+
+		FCCOBIX[1] = 1;
+		FCCOBHI[1] = (bank->base + bank->sectors[i].offset) >> 8;
+		FCCOBLO[1] = (bank->base + bank->sectors[i].offset);
+
+		result = kinetis_ke_ftmrx_command(bank, 2, FCCOBIX, FCCOBHI, FCCOBLO, &fstat);
+
+		if (result != ERROR_OK)	{
+			LOG_WARNING("erase sector %u failed", i);
+			return ERROR_FLASH_OPERATION_FAILED;
+		}
+	}
+
+	return ERROR_OK;
+}
+
+static int kinetis_ke_write_eeprom(struct flash_bank *bank, const uint8_t *buffer,
+			 uint32_t offset, uint32_t count)
+{
+	uint8_t FCCOBIX[6], FCCOBHI[6], FCCOBLO[6], fstat;
+	int result;
+
+	if (bank->target->state != TARGET_HALTED) {
+		LOG_ERROR("Target not halted");
+		return ERROR_TARGET_NOT_HALTED;
+	}
+
+	if (offset > bank->size)
+		return ERROR_FLASH_BANK_INVALID;
+
+	result = kinetis_ke_stop_watchdog(bank->target);
+	if (result != ERROR_OK)
+			return result;
+
+	result = kinetis_ke_prepare_flash(bank);
+	if (result != ERROR_OK)
+		return result;
+
+	while(count) {
+		FCCOBIX[0] = 0;
+		FCCOBHI[0] = FTMRX_CMD_PROGEE;
+		FCCOBLO[0] = (bank->base + offset) >> 16;
+
+		FCCOBIX[1] = 1;
+		FCCOBHI[1] = (bank->base + offset) >> 8;
+		FCCOBLO[1] = (bank->base + offset);
+
+
+        uint8_t chunk_size = count > 4 ? 4 : count;
+        count -= chunk_size;
+        offset += chunk_size;
+        uint8_t cmd_size = 2;
+        while(chunk_size--) {
+            FCCOBIX[cmd_size] = cmd_size;
+            FCCOBHI[cmd_size] = 0;
+            FCCOBLO[cmd_size] = *buffer++;
+            ++cmd_size;
+        }
+		result = kinetis_ke_ftmrx_command(bank, cmd_size, FCCOBIX, FCCOBHI, FCCOBLO, &fstat);
+
+		if (result != ERROR_OK)	{
+			LOG_WARNING("eeprom write to offset 0x%" PRIx32 "...0x%" PRIx32 " failed"
+            , offset - (cmd_size - 2)
+            , offset - 1
+            );
+			return ERROR_FLASH_OPERATION_FAILED;
+		}
+	}
+
+	return result;
+}
+
 static int kinetis_ke_write(struct flash_bank *bank, const uint8_t *buffer,
 			 uint32_t offset, uint32_t count)
 {
@@ -1127,6 +1225,74 @@ static int kinetis_ke_probe(struct flash_bank *bank)
 	return ERROR_OK;
 }
 
+static int kinetis_ke_probe_eeprom(struct flash_bank *bank)
+{
+	int result;
+	uint32_t offset = 0;
+	struct target *target = bank->target;
+	struct kinetis_ke_flash_bank *kinfo = bank->driver_priv;
+
+	result = target_read_u32(target, SIM_SRSID, &kinfo->sim_srsid);
+	if (result != ERROR_OK)
+		return result;
+
+	if (KINETIS_KE_SRSID_FAMID(kinfo->sim_srsid) != 0x00) {
+		LOG_ERROR("Unsupported KE family");
+		return ERROR_FLASH_OPER_UNSUPPORTED;
+	}
+
+	switch (KINETIS_KE_SRSID_SUBFAMID(kinfo->sim_srsid)) {
+		case KINETIS_KE_SRSID_KEX2:
+			LOG_INFO("KE02 sub-family");
+			break;
+		default:
+			LOG_ERROR("Unsupported KE sub-family");
+			return ERROR_FLASH_OPER_UNSUPPORTED;
+	}
+
+	/* We can only retrieve the ke0x part, but there is no way to know
+	 * the flash size, so assume the maximum flash size for the entire
+	 * sub family.
+	 */
+	bank->base = 0x10000000;
+	kinfo->sector_size = 2;
+
+	switch (KINETIS_KE_SRSID_SUBFAMID(kinfo->sim_srsid)) {
+
+		case KINETIS_KE_SRSID_KEX2:
+			/* Max. 512 */
+			bank->size = 512;
+			bank->num_sectors = bank->size / kinfo->sector_size;
+
+			/* KE02 uses the FTMRH flash controller,
+			 * and registers have a different offset from the
+			 * FTMRE flash controller. Sort this out here.
+			 */
+			kinfo->ftmrx_fclkdiv_addr = 0x40020000;
+			kinfo->ftmrx_fccobix_addr = 0x40020002;
+			kinfo->ftmrx_fstat_addr = 0x40020006;
+			kinfo->ftmrx_fprot_addr = 0x40020008;
+			kinfo->ftmrx_fccobhi_addr = 0x4002000A;
+			kinfo->ftmrx_fccoblo_addr = 0x4002000B;
+			break;
+	}
+
+	free(bank->sectors);
+
+	assert(bank->num_sectors > 0);
+	bank->sectors = malloc(sizeof(struct flash_sector) * bank->num_sectors);
+
+	for (unsigned int i = 0; i < bank->num_sectors; i++) {
+		bank->sectors[i].offset = offset;
+		bank->sectors[i].size = kinfo->sector_size;
+		offset += kinfo->sector_size;
+		bank->sectors[i].is_erased = -1;
+		bank->sectors[i].is_protected = 1;
+	}
+
+	return ERROR_OK;
+}
+
 static int kinetis_ke_auto_probe(struct flash_bank *bank)
 {
 	struct kinetis_ke_flash_bank *kinfo = bank->driver_priv;
@@ -1135,6 +1301,16 @@ static int kinetis_ke_auto_probe(struct flash_bank *bank)
 		return ERROR_OK;
 
 	return kinetis_ke_probe(bank);
+}
+
+static int kinetis_ke_auto_probe_eeprom(struct flash_bank *bank)
+{
+	struct kinetis_ke_flash_bank *kinfo = bank->driver_priv;
+
+	if (kinfo->sim_srsid)
+		return ERROR_OK;
+
+	return kinetis_ke_probe_eeprom(bank);
 }
 
 static int kinetis_ke_info(struct flash_bank *bank, struct command_invocation *cmd)
@@ -1185,6 +1361,62 @@ static int kinetis_ke_blank_check(struct flash_bank *bank)
 			FCCOBIX[2] = 2;
 			FCCOBHI[2] = longwords >> 8;
 			FCCOBLO[2] = longwords;
+
+			result = kinetis_ke_ftmrx_command(bank, 3, FCCOBIX, FCCOBHI, FCCOBLO, &fstat);
+
+			if (result == ERROR_OK)	{
+				bank->sectors[i].is_erased = !(fstat & (FTMRX_FSTAT_MGSTAT0_MASK | FTMRX_FSTAT_MGSTAT1_MASK));
+			} else {
+				LOG_DEBUG("Ignoring error on PFlash sector blank-check");
+				bank->sectors[i].is_erased = -1;
+			}
+		}
+	} else {
+		/* the whole bank is erased, update all sectors */
+		for (unsigned int i = 0; i < bank->num_sectors; i++)
+			bank->sectors[i].is_erased = 1;
+	}
+
+	return ERROR_OK;
+}
+
+static int kinetis_ke_blank_check_eeprom(struct flash_bank *bank)
+{
+	uint8_t FCCOBIX[3], FCCOBHI[3], FCCOBLO[3], fstat;
+	int result;
+
+	if (bank->target->state != TARGET_HALTED) {
+		LOG_ERROR("Target not halted");
+		return ERROR_TARGET_NOT_HALTED;
+	}
+
+	result = kinetis_ke_prepare_flash(bank);
+	if (result != ERROR_OK)
+		return result;
+
+	/* check if whole bank is blank */
+	FCCOBIX[0] = 0;
+	FCCOBHI[0] = FTMRX_CMD_ALLERASED;
+
+	result = kinetis_ke_ftmrx_command(bank, 1, FCCOBIX, FCCOBHI, NULL, &fstat);
+
+	if (result != ERROR_OK)
+		return result;
+
+	if (fstat & (FTMRX_FSTAT_MGSTAT0_MASK | FTMRX_FSTAT_MGSTAT1_MASK)) {
+		/* the whole bank is not erased, check sector-by-sector */
+		for (unsigned int i = 0; i < bank->num_sectors; i++) {
+			FCCOBIX[0] = 0;
+			FCCOBHI[0] = FTMRX_CMD_SECTIONERASEDEE;
+			FCCOBLO[0] = (bank->base + bank->sectors[i].offset) >> 16;
+
+			FCCOBIX[1] = 1;
+			FCCOBHI[1] = (bank->base + bank->sectors[i].offset) >> 8;
+			FCCOBLO[1] = (bank->base + bank->sectors[i].offset);
+
+			FCCOBIX[2] = 2;
+			FCCOBHI[2] = bank->size >> 8;
+			FCCOBLO[2] = bank->size;
 
 			result = kinetis_ke_ftmrx_command(bank, 3, FCCOBIX, FCCOBHI, FCCOBLO, &fstat);
 
@@ -1263,6 +1495,20 @@ const struct flash_driver kinetis_ke_flash = {
 	.auto_probe = kinetis_ke_auto_probe,
 	.erase_check = kinetis_ke_blank_check,
 	.protect_check = kinetis_ke_protect_check,
+	.info = kinetis_ke_info,
+	.free_driver_priv = default_flash_free_driver_priv,
+};
+
+const struct flash_driver kinetis_ke_eeprom = {
+	.name = "kinetis_ke_eeprom",
+	.commands = kinetis_ke_command_handler,
+	.flash_bank_command = kinetis_ke_flash_bank_command,
+	.erase = kinetis_ke_erase_eeprom,
+	.write = kinetis_ke_write_eeprom,
+	.read = default_flash_read,
+	.probe = kinetis_ke_probe_eeprom,
+	.auto_probe = kinetis_ke_auto_probe_eeprom,
+	.erase_check = kinetis_ke_blank_check_eeprom,
 	.info = kinetis_ke_info,
 	.free_driver_priv = default_flash_free_driver_priv,
 };
