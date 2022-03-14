@@ -1129,6 +1129,27 @@ static int kinetis_ke_write(struct flash_bank *bank, const uint8_t *buffer,
 	return result;
 }
 
+static int kinetis_ke_read_eeprom(struct flash_bank *bank, uint8_t *buffer,
+		      uint32_t offset, uint32_t count)
+{
+	struct target *target = bank->target;
+
+	if (target->state != TARGET_HALTED) {
+		LOG_ERROR("Target not halted");
+		return ERROR_TARGET_NOT_HALTED;
+	}
+
+	if (offset + count > bank->size) {
+		LOG_WARNING("Reads past end of flash. Extra data discarded.");
+		count = bank->size - offset;
+	}
+
+	LOG_INFO("reading %" PRIu32 " bytes from eeprom @" TARGET_ADDR_FMT, count, bank->base + offset);
+
+	/* read data */
+	return target_read_memory(target, bank->base + offset, 1, count, buffer);
+}
+
 static int kinetis_ke_probe(struct flash_bank *bank)
 {
 	int result;
@@ -1504,7 +1525,7 @@ const struct flash_driver kinetis_ke_eeprom = {
 	.flash_bank_command = kinetis_ke_flash_bank_command,
 	.erase = kinetis_ke_erase_eeprom,
 	.write = kinetis_ke_write_eeprom,
-	.read = default_flash_read,
+	.read = kinetis_ke_read_eeprom,
 	.probe = kinetis_ke_probe_eeprom,
 	.auto_probe = kinetis_ke_auto_probe_eeprom,
 	.erase_check = kinetis_ke_blank_check_eeprom,
