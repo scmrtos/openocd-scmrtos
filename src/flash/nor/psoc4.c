@@ -720,8 +720,14 @@ static int psoc4_test_flash_wounding(struct target *target, uint32_t flash_size)
 		uint32_t addr = flash_size >> i;
 		uint32_t dummy;
 		retval = target_read_u32(target, addr, &dummy);
+		LOG_INFO("probing %08x -> %s", addr, retval == ERROR_OK ? "ok" : "fail");
 		if (retval != ERROR_OK)
-			return i;
+        {
+        	retval = target_read_u32(target, addr, &dummy);
+            LOG_INFO("probing %08x -> %s", addr, retval == ERROR_OK ? "ok" : "fail");
+    		if (retval != ERROR_OK)
+    			return i;
+        }
 	}
 	return 0;
 }
