@@ -73,6 +73,9 @@
 #define FLASH_SR__PGAERR	(1<<9)
 #define FLASH_SR__SIZERR	(1<<10)
 #define FLASH_SR__OPTVERR	(1<<11)
+#define FLASH_SR__RDERR		(1<<13)
+#define FLASH_SR__NOTZEROERR	(1<<16)
+#define FLASH_SR__FWWERR	(1<<17)
 
 /* Unlock keys */
 #define PEKEY1			0x89ABCDEF
@@ -969,11 +972,17 @@ static int stm32lx_unlock_program_memory(struct flash_bank *bank)
 	int retval;
 	uint32_t reg32;
 
+	/* first clear possible error flags */
+	retval = target_write_u32(target, stm32lx_info->flash_base + FLASH_SR,
+			FLASH_SR__EOP | FLASH_SR__WRPERR | FLASH_SR__PGAERR 
+			| FLASH_SR__SIZERR | FLASH_SR__OPTVERR | FLASH_SR__RDERR
+			| FLASH_SR__NOTZEROERR | FLASH_SR__FWWERR);
+	if (retval != ERROR_OK)
+		return retval;
 	/*
 	 * Unlocking the program memory is done by unlocking the PECR,
 	 * then by writing the 2 PRGKEY to the PRGKEYR register
 	 */
-
 	/* check flash is not already unlocked */
 	retval = target_read_u32(target, stm32lx_info->flash_base + FLASH_PECR,
 			&reg32);
