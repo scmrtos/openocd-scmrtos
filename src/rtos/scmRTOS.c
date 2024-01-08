@@ -168,7 +168,7 @@ static int renew_proc_info   (struct rtos *rtos, os_info_t *os_info, os_kernel_t
 //    Objects
 //
 //------------------------------------------------------------------------------
-struct rtos_type scmRTOS_rtos = 
+const struct rtos_type scmRTOS_rtos = 
 {
     .name                      = "scmRTOS",
     .detect_rtos               = scmRTOS_detect_rtos,

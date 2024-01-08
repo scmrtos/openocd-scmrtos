@@ -1,22 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 /***************************************************************************
  *   Copyright (C) 2005 by Dominic Rath                                    *
  *   Dominic.Rath@gmx.de                                                   *
  *                                                                         *
  *   Copyright (C) 2007,2008 Øyvind Harboe                                 *
  *   oyvind.harboe@zylin.com                                               *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifndef OPENOCD_HELPER_COMMAND_H
@@ -381,10 +370,21 @@ struct command_context *copy_command_context(struct command_context *cmd_ctx);
  */
 void command_done(struct command_context *context);
 
+/*
+ * command_print() and command_print_sameline() are used to produce the TCL
+ * output of OpenOCD commands. command_print() automatically adds a '\n' at
+ * the end or the format string. Use command_print_sameline() to avoid the
+ * trailing '\n', e.g. to concatenate the command output in the same line.
+ * The very last '\n' of the command is stripped away (see run_command()).
+ * For commands that strictly require a '\n' as last output character, add
+ * it explicitly with either an empty command_print() or with a '\n' in the
+ * last command_print() and add a comment to document it.
+ */
 void command_print(struct command_invocation *cmd, const char *format, ...)
 __attribute__ ((format (PRINTF_ATTRIBUTE_FORMAT, 2, 3)));
 void command_print_sameline(struct command_invocation *cmd, const char *format, ...)
 __attribute__ ((format (PRINTF_ATTRIBUTE_FORMAT, 2, 3)));
+
 int command_run_line(struct command_context *context, char *line);
 int command_run_linef(struct command_context *context, const char *format, ...)
 __attribute__ ((format (PRINTF_ATTRIBUTE_FORMAT, 2, 3)));

@@ -40,9 +40,9 @@ static const struct stack_register_offset rtos_scmRTOS_arm7tdmi_stack_offsets[] 
 };
 
 const struct rtos_register_stacking rtos_scmRTOS_arm7tdmi_stacking = {
-	16 * 4,					/* stack_registers_size */
-	-1,						/* stack_growth_direction */
-	sizeof(rtos_scmRTOS_arm7tdmi_stack_offsets) / sizeof(rtos_scmRTOS_arm7tdmi_stack_offsets[0]),	/* num_output_registers */
-	rtos_generic_stack_align8,          /* stack_alignment */
-	rtos_scmRTOS_arm7tdmi_stack_offsets	/* register_offsets */
+	.stack_registers_size = 16 * 4,
+	.stack_growth_direction = -1,
+	.num_output_registers = sizeof(rtos_scmRTOS_arm7tdmi_stack_offsets) / sizeof(rtos_scmRTOS_arm7tdmi_stack_offsets[0]),	/* num_output_registers */
+	.calculate_process_stack = rtos_generic_stack_align8,
+	.register_offsets = rtos_scmRTOS_arm7tdmi_stack_offsets
 };

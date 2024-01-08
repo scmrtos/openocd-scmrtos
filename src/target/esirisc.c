@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /***************************************************************************
  *   Copyright (C) 2018 by Square, Inc.                                    *
  *   Steven Stallion <stallion@squareup.com>                               *
  *   James Zhao <hjz@squareup.com>                                         *
- *                                                                         *
- *   This program is free software; you can redistribute it and/or modify  *
- *   it under the terms of the GNU General Public License as published by  *
- *   the Free Software Foundation; either version 2 of the License, or     *
- *   (at your option) any later version.                                   *
- *                                                                         *
- *   This program is distributed in the hope that it will be useful,       *
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
- *   GNU General Public License for more details.                          *
- *                                                                         *
- *   You should have received a copy of the GNU General Public License     *
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
  ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -329,8 +318,10 @@ static int esirisc_flush_caches(struct target *target)
 
 	LOG_DEBUG("-");
 
-	if (target->state != TARGET_HALTED)
+	if (target->state != TARGET_HALTED) {
+		LOG_TARGET_ERROR(target, "not halted");
 		return ERROR_TARGET_NOT_HALTED;
+	}
 
 	int retval = esirisc_jtag_flush_caches(jtag_info);
 	if (retval != ERROR_OK) {
@@ -504,7 +495,7 @@ static int esirisc_add_breakpoint(struct target *target, struct breakpoint *brea
 		return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 	}
 
-	breakpoint->set = bp_index + 1;
+	breakpoint_hw_set(breakpoint, bp_index);
 	esirisc->breakpoints_p[bp_index] = breakpoint;
 
 	/* specify instruction breakpoint address */
@@ -540,7 +531,7 @@ static int esirisc_add_breakpoints(struct target *target)
 	LOG_DEBUG("-");
 
 	while (breakpoint) {
-		if (breakpoint->set == 0)
+		if (!breakpoint->is_set)
 			esirisc_add_breakpoint(target, breakpoint);
 
 		breakpoint = breakpoint->next;
@@ -553,7 +544,7 @@ static int esirisc_remove_breakpoint(struct target *target, struct breakpoint *b
 {
 	struct esirisc_common *esirisc = target_to_esirisc(target);
 	struct esirisc_jtag *jtag_info = &esirisc->jtag_info;
-	int bp_index = breakpoint->set - 1;
+	unsigned int bp_index = breakpoint->number;
 	uint32_t ibc;
 	int retval;
 
@@ -575,7 +566,7 @@ static int esirisc_remove_breakpoint(struct target *target, struct breakpoint *b
 	}
 
 	esirisc->breakpoints_p[bp_index] = NULL;
-	breakpoint->set = 0;
+	breakpoint->is_set = false;
 
 	return ERROR_OK;
 }
@@ -630,7 +621,7 @@ static int esirisc_add_watchpoint(struct target *target, struct watchpoint *watc
 		return ERROR_FAIL;
 	}
 
-	watchpoint->set = wp_index + 1;
+	watchpoint_set(watchpoint, wp_index);
 	esirisc->watchpoints_p[wp_index] = watchpoint;
 
 	/* specify data breakpoint address */
@@ -724,7 +715,7 @@ static int esirisc_add_watchpoints(struct target *target)
 	LOG_DEBUG("-");
 
 	while (watchpoint) {
-		if (watchpoint->set == 0)
+		if (!watchpoint->is_set)
 			esirisc_add_watchpoint(target, watchpoint);
 
 		watchpoint = watchpoint->next;
@@ -737,7 +728,7 @@ static int esirisc_remove_watchpoint(struct target *target, struct watchpoint *w
 {
 	struct esirisc_common *esirisc = target_to_esirisc(target);
 	struct esirisc_jtag *jtag_info = &esirisc->jtag_info;
-	int wp_index = watchpoint->set - 1;
+	unsigned int wp_index = watchpoint->number;
 	uint32_t dbc;
 	int retval;
 
@@ -759,7 +750,7 @@ static int esirisc_remove_watchpoint(struct target *target, struct watchpoint *w
 	}
 
 	esirisc->watchpoints_p[wp_index] = NULL;
-	watchpoint->set = 0;
+	watchpoint->is_set = false;
 
 	return ERROR_OK;
 }
@@ -866,8 +857,10 @@ static int esirisc_resume_or_step(struct target *target, int current, target_add
 
 	LOG_DEBUG("-");
 
-	if (target->state != TARGET_HALTED)
+	if (target->state != TARGET_HALTED) {
+		LOG_TARGET_ERROR(target, "not halted");
 		return ERROR_TARGET_NOT_HALTED;
+	}
 
 	if (!debug_execution) {
 		target_free_all_working_areas(target);

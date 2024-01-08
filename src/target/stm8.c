@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 *   OpenOCD STM8 target driver
 *   Copyright (C) 2017  Ake Rehnman
 *   ake.rehnman(at)gmail.com
-*
-*   This program is free software: you can redistribute it and/or modify
-*   it under the terms of the GNU General Public License as published by
-*   the Free Software Foundation, either version 2 of the License, or
-*   (at your option) any later version.
-*
-*   This program is distributed in the hope that it will be useful,
-*   but WITHOUT ANY WARRANTY; without even the implied warranty of
-*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*   GNU General Public License for more details.
-*
-*   You should have received a copy of the GNU General Public License
-*   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #ifdef HAVE_CONFIG_H
@@ -553,12 +542,12 @@ static int stm8_get_core_reg(struct reg *reg)
 	int retval;
 	struct stm8_core_reg *stm8_reg = reg->arch_info;
 	struct target *target = stm8_reg->target;
-	struct stm8_common *stm8_target = target_to_stm8(target);
+	struct stm8_common *stm8 = target_to_stm8(target);
 
 	if (target->state != TARGET_HALTED)
 		return ERROR_TARGET_NOT_HALTED;
 
-	retval = stm8_target->read_core_reg(target, stm8_reg->num);
+	retval = stm8->read_core_reg(target, stm8_reg->num);
 
 	return retval;
 }
@@ -1005,7 +994,7 @@ static int stm8_resume(struct target *target, int current,
 			handle_breakpoints, debug_execution);
 
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target not halted");
+		LOG_TARGET_ERROR(target, "not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
@@ -1314,7 +1303,7 @@ static int stm8_step(struct target *target, int current,
 	struct breakpoint *breakpoint = NULL;
 
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target not halted");
+		LOG_TARGET_ERROR(target, "not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
@@ -1370,7 +1359,7 @@ static void stm8_enable_breakpoints(struct target *target)
 
 	/* set any pending breakpoints */
 	while (breakpoint) {
-		if (breakpoint->set == 0)
+		if (!breakpoint->is_set)
 			stm8_set_breakpoint(target, breakpoint);
 		breakpoint = breakpoint->next;
 	}
@@ -1383,7 +1372,7 @@ static int stm8_set_breakpoint(struct target *target,
 	struct stm8_comparator *comparator_list = stm8->hw_break_list;
 	int retval;
 
-	if (breakpoint->set) {
+	if (breakpoint->is_set) {
 		LOG_WARNING("breakpoint already set");
 		return ERROR_OK;
 	}
@@ -1398,7 +1387,7 @@ static int stm8_set_breakpoint(struct target *target,
 					breakpoint->unique_id);
 			return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 		}
-		breakpoint->set = bp_num + 1;
+		breakpoint_hw_set(breakpoint, bp_num);
 		comparator_list[bp_num].used = true;
 		comparator_list[bp_num].bp_value = breakpoint->address;
 		comparator_list[bp_num].type = HWBRK_EXEC;
@@ -1435,7 +1424,7 @@ static int stm8_set_breakpoint(struct target *target,
 		} else {
 			return ERROR_TARGET_RESOURCE_NOT_AVAILABLE;
 		}
-		breakpoint->set = 1; /* Any nice value but 0 */
+		breakpoint->is_set = true;
 	}
 
 	return ERROR_OK;
@@ -1476,14 +1465,14 @@ static int stm8_unset_breakpoint(struct target *target,
 	struct stm8_comparator *comparator_list = stm8->hw_break_list;
 	int retval;
 
-	if (!breakpoint->set) {
+	if (!breakpoint->is_set) {
 		LOG_WARNING("breakpoint not set");
 		return ERROR_OK;
 	}
 
 	if (breakpoint->type == BKPT_HARD) {
-		int bp_num = breakpoint->set - 1;
-		if ((bp_num < 0) || (bp_num >= stm8->num_hw_bpoints)) {
+		int bp_num = breakpoint->number;
+		if (bp_num >= stm8->num_hw_bpoints) {
 			LOG_DEBUG("Invalid comparator number in breakpoint (bpid: %" PRIu32 ")",
 					  breakpoint->unique_id);
 			return ERROR_OK;
@@ -1517,7 +1506,7 @@ static int stm8_unset_breakpoint(struct target *target,
 		} else
 			return ERROR_FAIL;
 	}
-	breakpoint->set = 0;
+	breakpoint->is_set = false;
 
 	return ERROR_OK;
 }
@@ -1529,11 +1518,11 @@ static int stm8_remove_breakpoint(struct target *target,
 	struct stm8_common *stm8 = target_to_stm8(target);
 
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target not halted");
+		LOG_TARGET_ERROR(target, "not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if (breakpoint->set)
+	if (breakpoint->is_set)
 		stm8_unset_breakpoint(target, breakpoint);
 
 	if (breakpoint->type == BKPT_HARD)
@@ -1550,7 +1539,7 @@ static int stm8_set_watchpoint(struct target *target,
 	int wp_num = 0;
 	int ret;
 
-	if (watchpoint->set) {
+	if (watchpoint->is_set) {
 		LOG_WARNING("watchpoint already set");
 		return ERROR_OK;
 	}
@@ -1593,7 +1582,7 @@ static int stm8_set_watchpoint(struct target *target,
 		return ret;
 	}
 
-	watchpoint->set = wp_num + 1;
+	watchpoint_set(watchpoint, wp_num);
 
 	LOG_DEBUG("wp_num %i bp_value 0x%" PRIx32 "",
 			wp_num,
@@ -1627,7 +1616,7 @@ static void stm8_enable_watchpoints(struct target *target)
 
 	/* set any pending watchpoints */
 	while (watchpoint) {
-		if (watchpoint->set == 0)
+		if (!watchpoint->is_set)
 			stm8_set_watchpoint(target, watchpoint);
 		watchpoint = watchpoint->next;
 	}
@@ -1640,18 +1629,18 @@ static int stm8_unset_watchpoint(struct target *target,
 	struct stm8_common *stm8 = target_to_stm8(target);
 	struct stm8_comparator *comparator_list = stm8->hw_break_list;
 
-	if (!watchpoint->set) {
+	if (!watchpoint->is_set) {
 		LOG_WARNING("watchpoint not set");
 		return ERROR_OK;
 	}
 
-	int wp_num = watchpoint->set - 1;
-	if ((wp_num < 0) || (wp_num >= stm8->num_hw_bpoints)) {
+	int wp_num = watchpoint->number;
+	if (wp_num >= stm8->num_hw_bpoints) {
 		LOG_DEBUG("Invalid hw comparator number in watchpoint");
 		return ERROR_OK;
 	}
 	comparator_list[wp_num].used = false;
-	watchpoint->set = 0;
+	watchpoint->is_set = false;
 
 	stm8_set_hwbreak(target, comparator_list);
 
@@ -1665,11 +1654,11 @@ static int stm8_remove_watchpoint(struct target *target,
 	struct stm8_common *stm8 = target_to_stm8(target);
 
 	if (target->state != TARGET_HALTED) {
-		LOG_WARNING("target not halted");
+		LOG_TARGET_ERROR(target, "not halted");
 		return ERROR_TARGET_NOT_HALTED;
 	}
 
-	if (watchpoint->set)
+	if (watchpoint->is_set)
 		stm8_unset_watchpoint(target, watchpoint);
 
 	stm8->num_hw_bpoints_avail++;
@@ -1795,7 +1784,7 @@ static int stm8_checksum_memory(struct target *target, target_addr_t address,
 
 /* run to exit point. return error if exit point was not reached. */
 static int stm8_run_and_wait(struct target *target, uint32_t entry_point,
-		int timeout_ms, uint32_t exit_point, struct stm8_common *stm8)
+		unsigned int timeout_ms, uint32_t exit_point, struct stm8_common *stm8)
 {
 	uint32_t pc;
 	int retval;
@@ -1830,7 +1819,7 @@ static int stm8_run_and_wait(struct target *target, uint32_t entry_point,
 static int stm8_run_algorithm(struct target *target, int num_mem_params,
 		struct mem_param *mem_params, int num_reg_params,
 		struct reg_param *reg_params, target_addr_t entry_point,
-		target_addr_t exit_point, int timeout_ms, void *arch_info)
+		target_addr_t exit_point, unsigned int timeout_ms, void *arch_info)
 {
 	struct stm8_common *stm8 = target_to_stm8(target);
 

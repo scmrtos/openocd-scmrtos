@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 noinst_LTLIBRARIES += %D%/librtos.la
 %C%_librtos_la_SOURCES = \
 	%D%/rtos.c \
@@ -9,6 +11,7 @@ noinst_LTLIBRARIES += %D%/librtos.la
 	%D%/rtos_ucos_iii_stackings.c \
 	%D%/rtos_riot_stackings.c \
 	%D%/rtos_scmRTOS_stackings.c \
+	%D%/rtos_nuttx_stackings.c \
 	%D%/FreeRTOS.c \
 	%D%/ThreadX.c \
 	%D%/eCos.c \
@@ -19,6 +22,7 @@ noinst_LTLIBRARIES += %D%/librtos.la
 	%D%/mqx.c \
 	%D%/uCOS-III.c \
 	%D%/nuttx.c \
+	%D%/rtkernel.c \
 	%D%/hwthread.c \
 	%D%/zephyr.c \
 	%D%/riot.c \
@@ -33,4 +37,4 @@ noinst_LTLIBRARIES += %D%/librtos.la
 	%D%/rtos_riot_stackings.h \
 	%D%/rtos_ucos_iii_stackings.h \
 	%D%/rtos_scmRTOS_stackings.h \
-	%D%/nuttx_header.h
+	%D%/rtos_nuttx_stackings.h
